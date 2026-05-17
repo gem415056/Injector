@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 버튼 디자인 패치
+// @name        에리의 크랙 로어 인젝터 (Loader) - 로어 숨김 & 버튼 패치
 // @namespace   에리의 크랙 로어 인젝터
 // @version     1.4.0-test.65
-// @description 모듈화된 로어 인젝터 로더
+// @description 모듈화된 로어 인젝터 로더 + 로어 텍스트 마크다운 숨김 처리 + 버튼 디자인 패치
 // @author      로컬AI & Assistant
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -102,6 +102,41 @@
     _w.__LoreInjReady = p;
   }
 
+  // =========================================================================
+  // --- [로어 텍스트 투명화 유틸리티 함수] ---
+  // =========================================================================
+  async function processHiddenLore(orig, mod) {
+    if (orig === mod) return mod;
+    try {
+      const origIdx = mod.lastIndexOf(orig);
+      if (origIdx !== -1) {
+        let before = mod.substring(0, origIdx);
+        let after = mod.substring(origIdx + orig.length);
+        
+        if (before.trim()) {
+          // 큰따옴표를 작은따옴표로 치환하여 마크다운 문법 안 깨지게 보호 + 줄바꿈 공백 처리
+          let cleanBefore = before.replace(/"/g, "'").replace(/\n/g, ' ').trim();
+          before = `[//]: # "${cleanBefore}"\n`;
+        }
+        if (after.trim()) {
+          let cleanAfter = after.replace(/"/g, "'").replace(/\n/g, ' ').trim();
+          after = `\n[//]: # "${cleanAfter}"`;
+        }
+        return before + orig + after;
+      }
+      // 혹시라도 orig를 그대로 찾지 못했을 경우의 대비책 (ooc 태그 기반 감지)
+      const oocMatch = mod.match(/(<ooc_lore_context>[\s\S]*?<\/ooc_lore_context>)/i);
+      if (oocMatch) {
+         let cleanOoc = oocMatch[1].replace(/"/g, "'").replace(/\n/g, ' ').trim();
+         return mod.replace(oocMatch[1], `[//]: # "${cleanOoc}"`);
+      }
+    } catch(e) {
+      console.error('[Lore] Hidden Lore processing error:', e);
+    }
+    return mod;
+  }
+  // =========================================================================
+
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -130,7 +165,8 @@
               (async () => {
                 const mod = await injectText(orig);
                 if (orig !== mod) {
-                  arr[1].message = mod;
+                  // 수정한 부분: 로어 텍스트 투명화 적용
+                  arr[1].message = await processHiddenLore(orig, mod);
                   origWsSend.call(ws, prefix + JSON.stringify(arr));
                 } else {
                   origWsSend.call(ws, data);
@@ -164,7 +200,11 @@
                     if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
                       const orig = body.messages[i].content;
                       const mod = await injectText(orig);
-                      if (orig !== mod) { body.messages[i].content = mod; injected = true; }
+                      if (orig !== mod) { 
+                        // 수정한 부분: 로어 텍스트 투명화 적용
+                        body.messages[i].content = await processHiddenLore(orig, mod); 
+                        injected = true; 
+                      }
                       break;
                     }
                   }
@@ -174,7 +214,11 @@
                     if (typeof body[key] === 'string') {
                       const orig = body[key];
                       const mod = await injectText(orig);
-                      if (orig !== mod) { body[key] = mod; injected = true; }
+                      if (orig !== mod) { 
+                        // 수정한 부분: 로어 텍스트 투명화 적용
+                        body[key] = await processHiddenLore(orig, mod); 
+                        injected = true; 
+                      }
                       break;
                     }
                   }
@@ -184,7 +228,11 @@
                     if (typeof body.variables[key] === 'string') {
                       const orig = body.variables[key];
                       const mod = await injectText(orig);
-                      if (orig !== mod) { body.variables[key] = mod; injected = true; }
+                      if (orig !== mod) { 
+                        // 수정한 부분: 로어 텍스트 투명화 적용
+                        body.variables[key] = await processHiddenLore(orig, mod); 
+                        injected = true; 
+                      }
                       break;
                     }
                   }
