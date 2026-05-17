@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 로어 숨김 & 버튼 패치
+// @name        에리의 크랙 로어 인젝터 (Loader) - 로어 숨김 & 버튼 패치 V2
 // @namespace   에리의 크랙 로어 인젝터
 // @version     1.4.0-test.65
 // @description 모듈화된 로어 인젝터 로더 + 로어 텍스트 마크다운 숨김 처리 + 버튼 디자인 패치
@@ -109,26 +109,30 @@
     if (orig === mod) return mod;
     try {
       const origIdx = mod.lastIndexOf(orig);
+      const sysPrefix = "[System: Established world/character facts for this scene. Do not repeat verbatim.] ";
+      
       if (origIdx !== -1) {
         let before = mod.substring(0, origIdx);
         let after = mod.substring(origIdx + orig.length);
         
         if (before.trim()) {
-          // 큰따옴표를 작은따옴표로 치환하여 마크다운 문법 안 깨지게 보호 + 줄바꿈 공백 처리
-          let cleanBefore = before.replace(/"/g, "'").replace(/\n/g, ' ').trim();
-          before = `[//]: # "${cleanBefore}"\n`;
+          // 따옴표 치환 + 줄바꿈 공백 처리 + 원치 않는 ooc 태그 완전 삭제
+          let cleanBefore = before.replace(/"/g, "'").replace(/\n/g, ' ').replace(/<\/?ooc_lore_context>/gi, '').trim();
+          // 반드시 앞에 줄바꿈(\n)을 넣어 마크다운 문법으로 강제 인식시킴
+          before = `\n[//]: # "${sysPrefix}${cleanBefore}"\n\n`;
         }
         if (after.trim()) {
-          let cleanAfter = after.replace(/"/g, "'").replace(/\n/g, ' ').trim();
-          after = `\n[//]: # "${cleanAfter}"`;
+          let cleanAfter = after.replace(/"/g, "'").replace(/\n/g, ' ').replace(/<\/?ooc_lore_context>/gi, '').trim();
+          after = `\n\n[//]: # "${sysPrefix}${cleanAfter}"\n`;
         }
         return before + orig + after;
       }
+      
       // 혹시라도 orig를 그대로 찾지 못했을 경우의 대비책 (ooc 태그 기반 감지)
       const oocMatch = mod.match(/(<ooc_lore_context>[\s\S]*?<\/ooc_lore_context>)/i);
       if (oocMatch) {
-         let cleanOoc = oocMatch[1].replace(/"/g, "'").replace(/\n/g, ' ').trim();
-         return mod.replace(oocMatch[1], `[//]: # "${cleanOoc}"`);
+         let cleanOoc = oocMatch[1].replace(/"/g, "'").replace(/\n/g, ' ').replace(/<\/?ooc_lore_context>/gi, '').trim();
+         return mod.replace(oocMatch[1], `\n\n[//]: # "${sysPrefix}${cleanOoc}"\n\n`);
       }
     } catch(e) {
       console.error('[Lore] Hidden Lore processing error:', e);
