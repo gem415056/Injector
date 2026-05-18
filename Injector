@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.1
-// @description 모듈화된 로어 인젝터 로더 (로어 숨김 & 버튼 수정 패치 적용)
+// @version     1.5.2
+// @description 모듈화된 로어 인젝터 로더 (로어 숨김 & 버튼 수정 최종 패치)
 // @author      로컬AI (수정 by Assistant)
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -101,41 +101,38 @@
     p.__resolve = _resolve;
     _w.__LoreInjReady = p;
   }
-
+  
   // --- [수정된 부분 1: 로어 숨김 처리 로직] ---
-  // 이전에 잘 작동하던 로직을 그대로 적용하여 안정성을 확보합니다.
+  // 줄바꿈 문제를 해결하고 요청 조건에 완벽히 맞춘 최종 로직
   async function processHiddenLore(orig, mod) {
-    if (orig === mod) return mod;
+    // 7. try-catch로 감싸 에러가 나도 전송이 막히지 않도록 함
     try {
-        // 1. 유저가 직접 친 텍스트(orig)를 기준으로 앞/뒤에 추가된 로어를 분리
-        const loreText = mod.replace(orig, '§§SPLIT§§').trim();
-        if (!loreText.includes('§§SPLIT§§')) { // 분리 실패 시 안전하게 원본(mod) 반환
-             return mod;
-        }
-        let [beforeLore, afterLore] = loreText.split('§§SPLIT§§');
+        if (orig === mod) return mod; // 변경점이 없으면 그대로 반환
 
-        // 2. 각 로어 부분에 대해 요청된 포맷팅을 적용
-        const formatLorePart = (part) => {
-            if (!part || !part.trim()) return '';
-            const systemMessage = '[System: Established world/character facts for this scene. Do not repeat verbatim.] ';
-            const oneLineLore = part.replace(/\n/g, ' ').replace(/"/g, "'").trim();
-            return `\n[//]: # "${systemMessage}${oneLineLore}"`;
-        };
+        // 1. 유저 텍스트(orig)와 최종 텍스트(mod)를 비교해 추가된 로어만 정확히 추출
+        const loreOnly = mod.replace(orig, '').trim();
         
-        const hiddenBefore = formatLorePart(beforeLore);
-        const hiddenAfter = formatLorePart(afterLore);
+        // 추가된 로어가 없으면(공백 차이 등) 원본(orig) 반환
+        if (!loreOnly) return orig; 
+        
+        // 2. 로어 텍스트의 모든 줄바꿈(\n)을 띄어쓰기(공백)로 치환
+        // 3. 큰따옴표(")는 작은따옴표(')로 변경
+        const oneLineLore = loreOnly.replace(/\n/g, ' ').replace(/"/g, "'");
 
-        // 3. 유저 원본 텍스트와 숨겨진 로어를 합침
-        // 유저 텍스트 앞에는 줄바꿈 없이, 뒤에만 줄바꿈이 있도록 처리
-        let finalResult = hiddenBefore ? hiddenBefore.trimStart() : '';
-        finalResult += orig;
-        finalResult += hiddenAfter;
+        // 5. 시스템 안내 문구 추가
+        const systemMessage = '[System: Established world/character facts for this scene. Do not repeat verbatim.] ';
+        const commentContent = systemMessage + oneLineLore;
 
-        return finalResult;
-    } catch(e) {
-      console.error('[Lore] Hidden Lore processing error:', e);
-      // 4. 에러 발생 시 안전하게 원본(mod)을 그대로 보냅니다.
-      return mod;
+        // 4. 최종 마크다운 주석 생성
+        //    핵심: 사용자 텍스트와 주석 사이에 반드시 줄바꿈(\n)을 넣어 마크다운이 인식되게 함
+        const hiddenLore = `\n[//]: # "${commentContent}"`;
+
+        // 6. 원본 텍스트(orig)와 숨겨진 로어를 합쳐 최종 결과물 반환
+        return orig + hiddenLore;
+
+    } catch (e) {
+      console.error('[Lore] 로어 숨김 처리 중 오류 발생:', e);
+      return mod; // 실패 시 안전하게 원본(mod) 반환
     }
   }
   // --- [수정 완료] ---
@@ -167,12 +164,8 @@
               const orig = arr[1].message;
               (async () => {
                 const mod = await injectText(orig);
-                if (orig !== mod) {
-                  arr[1].message = await processHiddenLore(orig, mod);
-                  origWsSend.call(ws, prefix + JSON.stringify(arr));
-                } else {
-                  origWsSend.call(ws, data);
-                }
+                arr[1].message = await processHiddenLore(orig, mod);
+                origWsSend.call(ws, prefix + JSON.stringify(arr));
               })();
               return;
             }
@@ -197,45 +190,43 @@
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
                 let injected = false;
+                
+                const applyLoreHiding = async (obj, key) => {
+                    if (typeof obj[key] === 'string') {
+                        const orig = obj[key];
+                        const mod = await injectText(orig);
+                        if (orig !== mod) {
+                            obj[key] = await processHiddenLore(orig, mod);
+                            injected = true;
+                        }
+                    }
+                };
+                
                 if (Array.isArray(body.messages)) {
                   for (let i = body.messages.length - 1; i >= 0; i--) {
-                    if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
-                      const orig = body.messages[i].content;
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { 
-                        body.messages[i].content = await processHiddenLore(orig, mod); 
-                        injected = true; 
-                      }
-                      break;
+                    if (body.messages[i].role === 'user') {
+                      await applyLoreHiding(body.messages[i], 'content');
+                      break; 
                     }
                   }
                 }
+                
                 if (!injected) {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body[key] === 'string') {
-                      const orig = body[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { 
-                        body[key] = await processHiddenLore(orig, mod); 
-                        injected = true; 
-                      }
-                      break;
+                    const keys = ['content', 'message', 'text', 'prompt', 'query'];
+                    for (const key of keys) {
+                        await applyLoreHiding(body, key);
+                        if (injected) break;
                     }
-                  }
                 }
+
                 if (!injected && body.variables && typeof body.variables === 'object') {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body.variables[key] === 'string') {
-                      const orig = body.variables[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { 
-                        body.variables[key] = await processHiddenLore(orig, mod); 
-                        injected = true; 
-                      }
-                      break;
+                    const keys = ['content', 'message', 'text', 'prompt', 'query'];
+                    for (const key of keys) {
+                        await applyLoreHiding(body.variables, key);
+                        if (injected) break;
                     }
-                  }
                 }
+
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
@@ -428,11 +419,11 @@
   }
 
   // --- [수정된 부분 2: 버튼 디자인 덮어쓰기] ---
-  // 이전에 잘 작동하던 코드의 로직을 그대로 이식하여 안정성을 확보합니다.
+  // 이전에 잘 작동하던 안정적인 코드 로직을 그대로 이식
   (function tweakChasmButton() {
     if (typeof document === 'undefined') return;
     
-    // 1. 요청하신 디자인과 동일한 CSS를 <style> 태그로 만듭니다.
+    // 1. 요청하신 디자인과 동일한 CSS를 <style> 태그로 생성
     const s = document.createElement('style');
     s.id = 'chasm-btn-tweak-css';
     s.textContent = `
@@ -444,6 +435,7 @@
             font-size: 16px !important; 
             border: 1px solid #E6E6E6 !important; 
             cursor: pointer !important; transition: 0.2s !important; 
+            margin-right: -4px !important; /* 원본 스크립트 참고 */
             z-index: 10 !important; 
             padding: 0 !important;
             box-shadow: none !important;
@@ -461,33 +453,34 @@
         }
     `;
     
-    // CSS를 페이지에 주입하는 함수
+    // CSS를 페이지에 한 번만 주입하는 함수
     function injectCSS() {
         if (!document.getElementById('chasm-btn-tweak-css') && document.head) {
             document.head.appendChild(s);
         }
     }
 
-    // 2. 화면에 '🔥 chasm tools' 버튼이 나타나면 즉시 디자인을 교체합니다.
+    // 2. MutationObserver로 화면 변화를 감지하여 버튼이 나타나면 즉시 디자인 교체
     const obs = new MutationObserver(() => {
-        injectCSS(); // CSS가 항상 주입되도록 보장
+        injectCSS();
         const btns = document.querySelectorAll('button');
         for (const btn of btns) {
             if (btn.textContent.includes('🔥') && btn.textContent.toLowerCase().includes('chasm tools')) {
+                // 2. 텍스트를 '♡'로 변경
                 btn.textContent = '♡';
+                // 3. 클래스 추가
                 btn.classList.add('crack-uni-btn-chasm');
                 
-                // 3. 기존 모듈이 강제로 덮어쓰는 인라인 스타일을 다시 무력화시킵니다.
+                // 3. 기존 모듈이 강제로 덮어쓰는 인라인 스타일을 다시 무력화
                 btn.style.padding = '0';
                 btn.style.width = '36px';
                 btn.style.height = '36px';
                 btn.style.background = 'transparent';
-                btn.style.minWidth = 'unset';
+                btn.style.minWidth = '0';
             }
         }
     });
     
-    // DOM이 준비된 후 감시를 시작하여 안정성을 높입니다.
     const startObserver = () => {
         if (document.body) {
             obs.observe(document.body, { childList: true, subtree: true, characterData: true });
