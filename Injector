@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 성능 최적화 패치
+// @name        에리의 크랙 로어 인젝터 (Loader) - 최종 안정화 패치
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.5
-// @description 모듈화된 로어 인젝터 로더 (렉 현상 해결, 모든 기능 복구)
+// @version     1.7.6
+// @description 모듈화된 로어 인젝터 로더 (실행 순서 복구 및 모든 기능 안정화)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.5';
+  const LOADER_VERSION = '1.7.6';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -83,7 +83,101 @@
 
   if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
-  // [미션 4] 로딩 팝업 복구
+  // [핵심 수정] 1. 스크립트의 심장인 인터셉터를 가장 먼저 실행하여 안정성 확보
+  function installEarlyInterceptor() {
+      if (L0.__interceptorLoaded) return;
+      const origFetch = _w.fetch && _w.fetch.bind(_w);
+      const origWsSend = _w.WebSocket && _w.WebSocket.prototype && _w.WebSocket.prototype.send;
+      if (!origFetch || !origWsSend) return;
+      let injectFn = null;
+
+      async function injectText(text) {
+          if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
+          try { return await injectFn(text); } catch (e) { return text; }
+      }
+
+      _w.WebSocket.prototype.send = function(data) {
+          const ws = this;
+          if (injectFn && typeof data === 'string' && data.length > 10) {
+              const bi = data.indexOf('[');
+              if (bi > 0) {
+                  try {
+                      const prefix = data.slice(0, bi);
+                      const arr = JSON.parse(data.slice(bi));
+                      if (Array.isArray(arr) && arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string' && arr[1].message.length > 0) {
+                          const orig = arr[1].message;
+                          (async () => {
+                              const mod = await injectText(orig);
+                              if (orig !== mod) { arr[1].message = mod; origWsSend.call(ws, prefix + JSON.stringify(arr)); } else { origWsSend.call(ws, data); }
+                          })();
+                          return;
+                      }
+                  } catch (_) {}
+              }
+          }
+          return origWsSend.call(this, data);
+      };
+
+      _w.fetch = async function(...args) {
+          try {
+              if (injectFn) {
+                  let reqUrl = '', isReq = false;
+                  if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; } else reqUrl = String(args[0] || '');
+                  const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
+                  if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
+                      let bodyText = null;
+                      if (isReq) { try { bodyText = await args[0].clone().text(); } catch (_) {} }
+                      else if (args[1] && typeof args[1].body === 'string') bodyText = args[1].body;
+                      if (bodyText) {
+                          let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
+                          if (body && typeof body === 'object') {
+                              let injected = false;
+                              if (Array.isArray(body.messages)) {
+                                  for (let i = body.messages.length - 1; i >= 0; i--) {
+                                      if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
+                                          const orig = body.messages[i].content;
+                                          const mod = await injectText(orig);
+                                          if (orig !== mod) { body.messages[i].content = mod; injected = true; }
+                                          break;
+                                      }
+                                  }
+                              }
+                              if (injected) {
+                                  const newBodyText = JSON.stringify(body);
+                                  if (isReq) args[0] = new Request(args[0], { body: newBodyText });
+                                  else { args[1] = args[1] || {}; args[1].body = newBodyText; }
+                              }
+                          }
+                      }
+                  }
+              }
+          } catch (e) { }
+          return origFetch.apply(this, args);
+      };
+
+      _w.__loreRegister = function(fn) { injectFn = fn; };
+      L0.__interceptorLoaded = true;
+  }
+  installEarlyInterceptor(); // 즉시 실행!
+
+  // [핵심 수정] 2. 인터셉터가 준비된 후, 커스텀 기능을 안전하게 덮어씌움
+  const _origLoreRegister = _w.__loreRegister;
+  _w.__loreRegister(function(fn) {
+    _origLoreRegister(async function(userText) {
+      try {
+        const injected = await fn(userText);
+        if (!injected || injected === userText) return userText;
+        let loreBlock = injected.replace(userText, '').trim();
+        if (!loreBlock) return userText;
+        // 설정창 문구와 줄바꿈을 그대로 두고, 삭제용 마커만 부착
+        return userText + ' \n⦗' + loreBlock + '⦘';
+      } catch (e) {
+        return userText;
+      }
+    });
+  });
+
+  // [미션 4] 로딩 팝업 기능
   function showLoaderBadge(text, color = '#4a9') {
     try {
       const mount = document.body || document.documentElement;
@@ -106,63 +200,26 @@
       if (el) el.remove();
     } catch (_) {}
   }
-  
-  // [미션 2] 강제 문구 삽입 기능 삭제
-  const _origLoreRegister = _w.__loreRegister;
-  _w.__loreRegister = function(fn) {
-    _origLoreRegister(async function(userText) {
-      try {
-        const injected = await fn(userText);
-        if (!injected || injected === userText) return userText;
-        let loreBlock = injected.replace(userText, '').trim();
-        if (!loreBlock) return userText;
-        // 설정창 문구와 줄바꿈을 그대로 두고, 삭제용 마커만 부착
-        return userText + ' \n⦗' + loreBlock + '⦘';
-      } catch (e) {
-        return userText;
-      }
-    });
-  };
 
   // [미션 5] 렉 없는 스마트 지우개
   function eraseLoreFromNode(targetNode) {
-    if (!targetNode || typeof targetNode.querySelectorAll !== 'function') return;
+    if (!targetNode || !targetNode.textContent || !targetNode.textContent.includes('⦗')) return;
     try {
-      const elements = Array.from(targetNode.querySelectorAll('*')).filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
-      if (targetNode.innerHTML && targetNode.innerHTML.includes('⦗')) elements.unshift(targetNode);
-      if (elements.length === 0) return;
-
-      elements.forEach(el => {
-        if (el.innerHTML.includes('⦗')) {
-          el.innerHTML = el.innerHTML.replace(/\s*⦗[\s\S]*?⦘/g, '');
-        }
-      });
-    } catch(e) {}
-  }
-  
-  _w.__LoreInjReady.then(() => {
-    // 채팅창 영역만 감시하는 저격수 옵저버
-    const chatObserver = new MutationObserver((mutationsList) => {
-        for (const mutation of mutationsList) {
-            if (mutation.type === 'childList') {
-                mutation.addedNodes.forEach(node => eraseLoreFromNode(node));
+        const walker = document.createTreeWalker(targetNode, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        const nodesToClean = [];
+        while(node = walker.nextNode()) {
+            if (node.nodeValue && node.nodeValue.includes('⦗')) {
+                nodesToClean.push(node);
             }
         }
-    });
+        nodesToClean.forEach(n => {
+            n.nodeValue = n.nodeValue.replace(/\s*⦗[\s\S]*?⦘/g, '');
+        });
+    } catch(e) {}
+  }
 
-    // 채팅창이 로드될 때까지 기다렸다가 감시 시작
-    const startObserving = () => {
-        const chatContainer = document.querySelector('[class*="MessageList_container"]');
-        if (chatContainer) {
-            chatObserver.observe(chatContainer, { childList: true, subtree: false });
-        } else {
-            setTimeout(startObserving, 500);
-        }
-    };
-    startObserving();
-  });
-
-  // [미션 1] 하트 버튼 복구 (렉 없는 방식)
+  // [미션 1] 렉 없는 하트 버튼
   try {
     GM_addStyle(`
       .erie-heart-btn { display: inline-flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; border-radius: 6px !important; background: transparent !important; color: #555 !important; font-size: 16px !important; border: 1px solid #E6E6E6 !important; cursor: pointer !important; transition: background 0.2s !important; margin-right: -8px !important; z-index: 10 !important; box-sizing: border-box !important; }
@@ -194,7 +251,7 @@
     }
   }
 
-  // (아래는 핵심 로더 부분)
+  // (아래는 핵심 로더 부분 - 순서 복구됨)
   function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
   function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
   function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
@@ -209,7 +266,6 @@
       history[name].__lorePatched = true;
     };
     try { patchHistory('pushState'); patchHistory('replaceState'); } catch (_) {}
-    try { new MutationObserver(fire).observe(document.documentElement, { childList: true, subtree: true }); } catch (_) {}
     try { window.addEventListener('popstate', fire); } catch (_) {}
     try { window.addEventListener('hashchange', fire); } catch (_) {}
   }
@@ -257,21 +313,41 @@
         const code = await fetchText(url);
         return '\n/* ---- ' + url + ' ---- */\n' + code;
       }));
-      // 인터셉터는 eval 전에 먼저 실행되어야 함
-      installEarlyInterceptor();
       eval(codes.join('\n'));
       L0.__dynamicLoaded = true;
       startReadyGate();
     } catch (e) {
-      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed' }); } catch (_) {}
-      showLoaderBadge('로어 로드 실패', '#d66');
+      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: e }); } catch (_) {}
+      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
+      console.error('[LoreInj] 모듈 로드 실패:', e);
     }
   }
 
   if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
   
-  // 페이지 이동 시와 로딩 완료 시 버튼 패치 실행 (렉 없는 방식)
-  _w.__LoreInjReady.then(() => { setTimeout(patchChasmButton, 1000); });
+  // 로딩 완료 후, 그리고 페이지 이동 시마다 최적화된 기능들 실행
+  _w.__LoreInjReady.then(() => {
+    setTimeout(patchChasmButton, 1000); // 1초 후 버튼 교체
+    
+    // 채팅창 영역만 감시하는 저격수 옵저버
+    const chatObserver = new MutationObserver((mutationsList) => {
+        for (const mutation of mutationsList) {
+            if (mutation.type === 'childList') {
+                mutation.addedNodes.forEach(node => eraseLoreFromNode(node));
+            }
+        }
+    });
+    
+    const startObserving = () => {
+        const chatContainer = document.querySelector('[class*="MessageList_container"]');
+        if (chatContainer) {
+            chatObserver.observe(chatContainer, { childList: true, subtree: false });
+        } else {
+            setTimeout(startObserving, 500); // 채팅창이 늦게 로드될 경우를 대비
+        }
+    };
+    startObserving();
+  });
   onRouteChange(() => { if(isChatPath()) setTimeout(patchChasmButton, 1000); });
 
 })();
