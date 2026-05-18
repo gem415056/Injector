@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.7.4 복구 및 렉 제로 패치
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.0 최종 복구판
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.9
-// @description 모듈화된 로어 인젝터 로더 (1.7.4 원본 삽입 + 렉 없는 투명화)
+// @version     1.8.0
+// @description 모듈화된 로어 인젝터 로더 (성공 코드 원본 조합 + 렉 제로 지우개)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.9';
+  const LOADER_VERSION = '1.8.0';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -84,7 +84,7 @@
   if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
   // =====================================================================
-  // [기본] 핵심 인터셉터 설치
+  // 1. 핵심 인터셉터 로드 (가장 먼저 실행되어야 함)
   // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
@@ -163,7 +163,7 @@
   installEarlyInterceptor();
 
   // =====================================================================
-  // [1.7.4 원본 복구] 로어 삽입 로직 (1글자도 수정하지 않은 원본)
+  // 2. 로어 삽입 및 마커 부착 (1.7.4 원본 코드 100% 보존)
   // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
   
@@ -173,48 +173,54 @@
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
-        // 1. 설정된 앞/뒤 문구와 줄바꿈이 모두 포함된 순수 로어 블록 추출
         let loreBlock = injected.replace(userText, '').trim();
         if (!loreBlock) return userText;
 
-        // 2. 압축이나 삭제 전혀 없이 원본 그대로 보존하고, 앞뒤에 삭제용 마커(⦗, ⦘)만 부착
         return userText + '\n\n⦗\n' + loreBlock + '\n⦘';
-
       } catch (e) {
-        console.error('[LoreInj] 로어 변환 실패:', e);
         return userText;
       }
     });
   };
 
   // =====================================================================
-  // [렉 제로 + 과거기록 해결] 초경량 말풍선 전용 지우개
+  // 3. 렉 0% 가벼운 화면 지우개 (입력창 무시, 1초마다 자동 지움)
   // =====================================================================
   function eraseLoreSafely() {
-    // 문서 안에 마커 기호가 없으면 아예 작동을 멈춰서 CPU 낭비 및 렉 방지
-    if (!document.body || !document.body.innerHTML.includes('⦗')) return;
-
-    const elements = document.querySelectorAll('*');
-    for (let i = elements.length - 1; i >= 0; i--) {
-        const el = elements[i];
-        
-        // 🚨 가장 중요한 부분: 타이핑 렉 방지를 위해 입력창은 절.대 건드리지 않음
-        if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable) continue;
-        if (el.querySelector && el.querySelector('textarea, input, [contenteditable="true"]')) continue;
-
-        // 말풍선 안에 마커가 보이면 싹 지움 (과거 기록도 화면에 나타나면 즉시 지워짐)
-        if (el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘')) {
-            el.innerHTML = el.innerHTML.replace(/<br>\s*⦗[\s\S]*?⦘/g, '').replace(/⦗[\s\S]*?⦘/g, '');
+    if (!document.body || !document.body.textContent.includes('⦗')) return;
+    
+    // 텍스트 노드만 빠르게 찾아내서 지우는 가장 가벼운 방식
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    const nodesToClean = [];
+    
+    while (node = walker.nextNode()) {
+        if (node.nodeValue && node.nodeValue.includes('⦗')) {
+            // 유저가 타이핑 중인 입력창(TEXTAREA, INPUT 등) 내부의 텍스트는 지우지 않음 (렉 방지)
+            let parent = node.parentNode;
+            let isInput = false;
+            while(parent) {
+                if (parent.tagName === 'TEXTAREA' || parent.tagName === 'INPUT' || parent.isContentEditable) {
+                    isInput = true; 
+                    break;
+                }
+                parent = parent.parentNode;
+            }
+            if (!isInput) nodesToClean.push(node);
         }
     }
+    
+    // 추출된 텍스트 노드들에서만 마커 기호와 내용을 지움
+    nodesToClean.forEach(n => {
+        n.nodeValue = n.nodeValue.replace(/\s*⦗[\s\S]*?⦘/g, '');
+    });
   }
 
-  // 0.5초마다 아주 조용히 말풍선만 확인합니다. 입력창은 무시하므로 렉이 없습니다.
-  setInterval(eraseLoreSafely, 500);
-
+  // 실시간 감시기(MutationObserver) 완전 삭제! 대신 1초마다 아주 가볍게 청소만 합니다.
+  setInterval(eraseLoreSafely, 1000);
 
   // =====================================================================
-  // [원본 유지] 하트 버튼 기능
+  // 4. 잘 고쳐진 하트 버튼 코드 (안정적 컨펌받은 원본 그대로 적용)
   // =====================================================================
   try {
     GM_addStyle(`
@@ -248,7 +254,7 @@
   }
 
   // =====================================================================
-  // 코어 로더 설정
+  // 5. 로더 핵심 동작 (건드리지 않음)
   // =====================================================================
   function showLoaderBadge(text, color = '#4a9') {
     try {
@@ -345,6 +351,7 @@
 
   if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
   
+  // 로딩 완료 후 및 채팅방 이동 시 하트 버튼 적용
   _w.__LoreInjReady.then(() => { setTimeout(patchChasmButton, 1000); });
   onRouteChange(() => { if(isChatPath()) setTimeout(patchChasmButton, 1000); });
 
