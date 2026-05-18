@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 빈 링크 투명화 패치
+// @name        에리의 크랙 로어 인젝터 (Loader) - 스마트 지우개 최종판
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.2
-// @description 모듈화된 로어 인젝터 로더 (줄바꿈 없는 완벽 투명링크 방식)
+// @version     1.7.5
+// @description 모듈화된 로어 인젝터 로더 (시스템 문구 제거, 유저 설정 100% 반영 + 화면 삭제)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.2';
+  const LOADER_VERSION = '1.7.5';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -83,6 +83,9 @@
 
   if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
+  // =====================================================================
+  // [인터셉터] - 서버로 보내는 데이터 가로채기
+  // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -171,9 +174,8 @@
   installEarlyInterceptor();
 
   // =====================================================================
-  // [1.7.2 패치] 줄바꿈(\n)과 HTML 없이 순수 마크다운 "빈 링크" 기법으로 투명화
+  // [1.7.5 패치] 하드코딩 문구 제거, 유저 설정창 100% 반영 + 마커 씌우기
   // =====================================================================
-  const LORE_SYSTEM_PREFIX = 'System: Established world/character facts for this scene. Do not repeat verbatim.';
   const _origLoreRegister = _w.__loreRegister;
   
   _w.__loreRegister = function(fn) {
@@ -182,32 +184,62 @@
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
-        // 1. 유저 텍스트와 분리하여 순수 로어만 추출 (1.45 작동 방식 그대로 유지)
-        let loreBlock = injected.replace(userText, '').trim();
+        // 1. 유저의 순수 채팅을 제외한 '나머지(앞/뒤 설정 문구 + 로어 본문)' 통째로 추출
+        let loreBlock = injected.replace(userText, '');
+        if (!loreBlock.trim()) return userText;
 
-        // 2. 줄바꿈을 철저히 제거하고, 로어 안의 큰따옴표(")를 작은따옴표(')로 바꿈
-        // (큰따옴표가 있으면 마크다운 문법이 깨질 수 있으므로 방지)
-        loreBlock = loreBlock
-          .replace(/[\n\r]+/g, ' ')
-          .replace(/"/g, "'")
-          .replace(/\s{2,}/g, ' ')
-          .trim();
-
-        if (!loreBlock) return userText;
-
-        // 3. 줄바꿈 없이 바로 빈 링크 문법으로 이어 붙임: 유저텍스트 [](# "로어내용")
-        // 마크다운 상 내용은 존재하지만 화면 렌더링시 크기가 0이 되어 보이지 않음
-        return userText + ' [](# "' + LORE_SYSTEM_PREFIX + ' ' + loreBlock + '")';
+        // 2. 강제 문구나 강제 줄바꿈 없이, 유저가 설정한 양식 양끝에 지우개용 마커(⦗ ⦘)만 씌움
+        return userText + '⦗' + loreBlock + '⦘';
 
       } catch (e) {
-        console.error('[LoreInj] 로어 포맷 변환 실패, 원본 발송:', e);
+        console.error('[LoreInj] 로어 변환 실패:', e);
         return userText;
       }
     });
   };
 
   // =====================================================================
-  // [UI 패치] 버튼 변경 기능
+  // [스마트 지우개] 화면에서 마커(⦗ ⦘) 안의 내용을 깔끔하게 삭제
+  // =====================================================================
+  function eraseLoreHTML() {
+    try {
+      const elements = Array.from(document.querySelectorAll('*'))
+        .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
+      
+      if (elements.length === 0) return;
+
+      // 요소의 자식(가장 안쪽 텍스트)부터 안전하게 처리하도록 정렬
+      elements.sort((a, b) => {
+        let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
+        let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
+        return depthB - depthA;
+      });
+
+      const processed = new Set();
+      elements.forEach(el => {
+        if (!processed.has(el)) {
+          // 정규식: 마커 안의 텍스트 삭제 + 마커 바로 앞에 생길 수 있는 공백이나 줄바꿈 태그(<br>)까지 여백 없이 삭제
+          el.innerHTML = el.innerHTML.replace(/(?:<br\s*\/?>|\s)*⦗[\s\S]*?⦘/gi, '');
+          
+          let parent = el.parentNode;
+          while(parent) { processed.add(parent); parent = parent.parentNode; }
+        }
+      });
+    } catch (e) {}
+  }
+
+  // 화면이 변할 때마다 스마트 지우개 즉시 작동
+  const domObserver = new MutationObserver(() => {
+    eraseLoreHTML();
+  });
+  domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+
+  // 놓치는 텍스트가 없도록 1초마다 보조 청소
+  setInterval(eraseLoreHTML, 1000);
+
+
+  // =====================================================================
+  // [UI 패치] 🔥Chasm 버튼을 ♡ 로 교체
   // =====================================================================
   try {
     GM_addStyle(`
@@ -258,11 +290,9 @@
 
   _w.__LoreInjReady.then(() => {
     patchChasmButton();
-    const globalObs = new MutationObserver(() => { patchChasmButton(); });
-    const root = document.body || document.documentElement;
-    if (root) globalObs.observe(root, { childList: true, subtree: true });
   });
 
+  // (아래는 로더 핵심 파일 호출부)
   function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
   function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
   function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
@@ -277,7 +307,6 @@
       history[name].__lorePatched = true;
     };
     try { patchHistory('pushState'); patchHistory('replaceState'); } catch (_) {}
-    try { new MutationObserver(fire).observe(document.documentElement, { childList: true, subtree: true }); } catch (_) {}
     try { window.addEventListener('popstate', fire); } catch (_) {}
     try { window.addEventListener('hashchange', fire); } catch (_) {}
   }
