@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 스마트 지우개 최종판
+// @name        에리의 크랙 로어 인젝터 (Loader) - 스마트 지우개 패치 (유저 아이디어)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.5
-// @description 모듈화된 로어 인젝터 로더 (시스템 문구 제거, 유저 설정 100% 반영 + 화면 삭제)
+// @version     1.7.4
+// @description 모듈화된 로어 인젝터 로더 (원본 양식 유지 + 화면 지정 삭제 기법)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.5';
+  const LOADER_VERSION = '1.7.4';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -174,7 +174,7 @@
   installEarlyInterceptor();
 
   // =====================================================================
-  // [1.7.5 패치] 하드코딩 문구 제거, 유저 설정창 100% 반영 + 마커 씌우기
+  // [1.7.4 패치] 유저 아이디어: 줄바꿈 유지 + 원본 포맷 유지 + 마커만 부착
   // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
   
@@ -184,12 +184,13 @@
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
-        // 1. 유저의 순수 채팅을 제외한 '나머지(앞/뒤 설정 문구 + 로어 본문)' 통째로 추출
-        let loreBlock = injected.replace(userText, '');
-        if (!loreBlock.trim()) return userText;
+        // 1. 설정된 앞/뒤 문구와 줄바꿈이 모두 포함된 순수 로어 블록 추출
+        let loreBlock = injected.replace(userText, '').trim();
+        if (!loreBlock) return userText;
 
-        // 2. 강제 문구나 강제 줄바꿈 없이, 유저가 설정한 양식 양끝에 지우개용 마커(⦗ ⦘)만 씌움
-        return userText + '⦗' + loreBlock + '⦘';
+        // 2. 압축이나 삭제 전혀 없이 원본 그대로 보존하고, 앞뒤에 삭제용 마커(⦗, ⦘)만 부착
+        // (AI는 이 줄바꿈과 설정 문구를 보고 상황을 완벽하게 인식합니다)
+        return userText + '\n\n⦗\n' + loreBlock + '\n⦘';
 
       } catch (e) {
         console.error('[LoreInj] 로어 변환 실패:', e);
@@ -199,16 +200,17 @@
   };
 
   // =====================================================================
-  // [스마트 지우개] 화면에서 마커(⦗ ⦘) 안의 내용을 깔끔하게 삭제
+  // [스마트 지우개] 화면에서 마커(⦗ ⦘) 안의 다중 줄바꿈 내용까지 통째로 삭제
   // =====================================================================
   function eraseLoreHTML() {
     try {
+      // 1. 화면 내의 모든 요소 중, 특수 마커가 포함된 요소를 찾음
       const elements = Array.from(document.querySelectorAll('*'))
         .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
       
       if (elements.length === 0) return;
 
-      // 요소의 자식(가장 안쪽 텍스트)부터 안전하게 처리하도록 정렬
+      // 2. 가장 깊은 요소(자식 노드)부터 처리하도록 정렬 (DOM 구조 붕괴 방지)
       elements.sort((a, b) => {
         let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
         let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
@@ -218,9 +220,11 @@
       const processed = new Set();
       elements.forEach(el => {
         if (!processed.has(el)) {
-          // 정규식: 마커 안의 텍스트 삭제 + 마커 바로 앞에 생길 수 있는 공백이나 줄바꿈 태그(<br>)까지 여백 없이 삭제
-          el.innerHTML = el.innerHTML.replace(/(?:<br\s*\/?>|\s)*⦗[\s\S]*?⦘/gi, '');
+          // 3. ⦗ 기호부터 ⦘ 기호까지, 그 안에 껴있는 <p>, <br> 등 모든 HTML 태그와 텍스트를 정규식으로 삭제!
+          el.innerHTML = el.innerHTML.replace(/<br>\s*⦗[\s\S]*?⦘/g, '');
+          el.innerHTML = el.innerHTML.replace(/⦗[\s\S]*?⦘/g, '');
           
+          // 상위 요소들은 이미 처리된 것으로 간주하여 중복 삭제 방지
           let parent = el.parentNode;
           while(parent) { processed.add(parent); parent = parent.parentNode; }
         }
@@ -228,13 +232,13 @@
     } catch (e) {}
   }
 
-  // 화면이 변할 때마다 스마트 지우개 즉시 작동
+  // 화면이 변할 때마다 스마트 지우개 상시 작동
   const domObserver = new MutationObserver(() => {
     eraseLoreHTML();
   });
   domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 
-  // 놓치는 텍스트가 없도록 1초마다 보조 청소
+  // 놓치는 텍스트가 없도록 1초 간격 추가 청소
   setInterval(eraseLoreHTML, 1000);
 
 
