@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 3단계 스마트 지우개
+// @name        에리의 크랙 로어 인젝터 (Loader) - 백 투 더 베이직 (투명 링크)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.3
-// @description 1.45+1.7.0+1.7.5 기반, 로딩/이동/전송 시에만 작동하는 렉 제로 지우개
+// @version     1.8.4
+// @description [최종] 1.45 로더 + 1.7.0 하트 + 문법 오류 없는 투명 링크 방식 (렉/지우개 없음)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   // =====================================================================
-  // [1. 1.45 원본 로더 코어 구역] 
+  // [1. 1.45 원본 로더 구역] 
   // =====================================================================
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
   const LOADER_VERSION = '1.4.0-test.65';
@@ -89,34 +89,7 @@
   }
 
   // =====================================================================
-  // [2. 화면 지우개 함수 (1.7.5 원본 코드)]
-  // =====================================================================
-  function eraseLoreHTML() {
-    try {
-      const elements = Array.from(document.querySelectorAll('*'))
-        .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
-      
-      if (elements.length === 0) return;
-
-      elements.sort((a, b) => {
-        let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
-        let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
-        return depthB - depthA;
-      });
-
-      const processed = new Set();
-      elements.forEach(el => {
-        if (!processed.has(el)) {
-          el.innerHTML = el.innerHTML.replace(/(?:<br\s*\/?>|\s)*⦗[\s\S]*?⦘/gi, '');
-          let parent = el.parentNode;
-          while(parent) { processed.add(parent); parent = parent.parentNode; }
-        }
-      });
-    } catch (e) {}
-  }
-
-  // =====================================================================
-  // [3. 서버 데이터 가로채기 & 전송 트리거]
+  // [2. 삽입/전송 로직 (투명 링크 + 문법 교정)]
   // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
@@ -125,13 +98,35 @@
     if (!origFetch || !origWsSend) return;
     let injectFn = null;
 
+    _w.__loreRegister = function(fn) { injectFn = fn; };
+
+    (function() { // 투명 링크를 적용하는 새로운 로직
+      const _origLoreRegister = _w.__loreRegister;
+      _w.__loreRegister = function(fn) {
+        _origLoreRegister(async function(userText) {
+          try {
+            const injected = await fn(userText);
+            if (!injected || injected === userText) return userText;
+    
+            let loreBlock = injected.replace(userText, '').trim();
+            if (!loreBlock) return userText;
+
+            // 핵심: 로어 안의 큰따옴표(")를 작은따옴표(')로 바꿔서 문법 깨짐 방지
+            loreBlock = loreBlock.replace(/"/g, "'").replace(/[\r\n]+/g, ' ');
+
+            // 사이트 자체 기능으로 투명해지는 '빈 링크' 방식으로 전송
+            return userText + ' [](# "' + loreBlock + '")';
+          } catch (e) {
+            return userText;
+          }
+        });
+      };
+    })();
+
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
       try { return await injectFn(text); } catch (e) { return text; }
     }
-
-    // 전송 직후 지우개 트리거
-    const fireEraser = () => setTimeout(eraseLoreHTML, 500); // 0.5초 뒤에 1번만 실행해서 부담 없음
 
     _w.WebSocket.prototype.send = function(data) {
       const ws = this;
@@ -145,13 +140,7 @@
               const orig = arr[1].message;
               (async () => {
                 const mod = await injectText(orig);
-                if (orig !== mod) {
-                  arr[1].message = mod;
-                  origWsSend.call(ws, prefix + JSON.stringify(arr));
-                  fireEraser(); // 전송 완료! 지우개 작동 시작
-                } else {
-                  origWsSend.call(ws, data);
-                }
+                if (orig !== mod) { arr[1].message = mod; origWsSend.call(ws, prefix + JSON.stringify(arr)); } else { origWsSend.call(ws, data); }
               })();
               return;
             }
@@ -199,7 +188,6 @@
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
                   else { args[1] = args[1] || {}; args[1].body = newBodyText; }
-                  fireEraser(); // 전송 완료! 지우개 작동 시작
                 }
               }
             }
@@ -208,8 +196,6 @@
       } catch (e) {}
       return origFetch.apply(this, args);
     };
-
-    _w.__loreRegister = function(fn) { injectFn = fn; };
     L0.__interceptorLoaded = true;
     L0.__earlyInterceptorLoaded = true;
   }
@@ -217,27 +203,7 @@
   installEarlyInterceptor();
 
   // =====================================================================
-  // [4. 정상 삽입 로직 (1.7.5 방식)]
-  // =====================================================================
-  const _origLoreRegister = _w.__loreRegister;
-  _w.__loreRegister = function(fn) {
-    _origLoreRegister(async function(userText) {
-      try {
-        const injected = await fn(userText);
-        if (!injected || injected === userText) return userText;
-
-        let loreBlock = injected.replace(userText, '');
-        if (!loreBlock.trim()) return userText;
-
-        return userText + '⦗' + loreBlock + '⦘';
-      } catch (e) {
-        return userText;
-      }
-    });
-  };
-
-  // =====================================================================
-  // [5. 하트 버튼 UI 패치 (1.7.0 원본 방식)]
+  // [3. 1.7.0 하트 버튼 원본]
   // =====================================================================
   try {
     GM_addStyle(`
@@ -271,8 +237,15 @@
     }
   }
 
+  _w.__LoreInjReady.then(() => {
+    patchChasmButton();
+    const globalObs = new MutationObserver(() => { patchChasmButton(); });
+    const root = document.body || document.documentElement;
+    if (root) globalObs.observe(root, { childList: true, subtree: true });
+  });
+
   // =====================================================================
-  // [1.45 원본 로더 하단부 구역] (수정됨: 지우개 실행 트리거 추가)
+  // [1.45 원본 로더 하단부] (단 1글자도 수정하지 않음)
   // =====================================================================
   function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
   function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
@@ -295,18 +268,6 @@
 
   Object.assign(L0, { isChatPath, isHomePath, onRouteChange, runWhenChatRoute(init) { if (isChatPath()) return init(); let started = false; onRouteChange(() => { if (started || !isChatPath()) return; started = true; init(); }); }});
   updateRoute();
-
-  // **핵심 수정:** 채팅방 이동 시 과거 대화 지우기
-  onRouteChange(() => { setTimeout(eraseLoreHTML, 500); });
-  _w.__LoreInjReady.then(() => {
-    // 1. 하트 버튼 상시 적용
-    patchChasmButton();
-    const globalObs = new MutationObserver(() => { patchChasmButton(); });
-    const root = document.body || document.documentElement;
-    if (root) globalObs.observe(root, { childList: true, subtree: true });
-    // 2. 초기 로딩 시 과거 대화 지우기
-    setTimeout(eraseLoreHTML, 500); 
-  });
 
   function showLoaderBadge(text, color = '#4a9') { try { const mount = document.body || document.documentElement; if (!mount) return; let el = document.getElementById('lore-lite-loader-badge'); if (!el) { el = document.createElement('div'); el.id = 'lore-lite-loader-badge'; el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;'; mount.appendChild(el); } el.textContent = text; el.style.borderColor = color; } catch (_) {} }
   function hideLoaderBadge() { try { const el = document.getElementById('lore-lite-loader-badge'); if (el) el.remove(); } catch (_) {} }
