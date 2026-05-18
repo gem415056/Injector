@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 스마트 지우개 & UI 고정 (안전판)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 스마트 지우개 & UI 고정 (로더 원상복구)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.7
-// @description \n 오류 원천 차단 및 마커 내부 공백 제거, UI 불변 고정 패치
+// @version     1.7.8
+// @description \n 오류 원천 차단 및 원본 로더 100% 복구, UI 불변 고정 패치
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.7';
+  const LOADER_VERSION = '1.7.8';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -72,16 +72,35 @@
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
   L0.moduleStatus = L0.moduleStatus || {};
-  L0.markLoaded = L0.markLoaded || function(name, meta) { L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) }; L0['__' + name + 'Loaded'] = true; };
-  L0.markFailed = L0.markFailed || function(name, error, meta) { L0.moduleStatus[name] = { ok: false, time: Date.now(), error: String(error && error.message || error || 'unknown'), ...(meta || {}) }; L0['__' + name + 'Failed'] = true; };
+  L0.markLoaded = L0.markLoaded || function(name, meta) {
+    L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) };
+    L0['__' + name + 'Loaded'] = true;
+  };
+  L0.markFailed = L0.markFailed || function(name, error, meta) {
+    L0.moduleStatus[name] = {
+      ok: false,
+      time: Date.now(),
+      error: String(error && error.message || error || 'unknown'),
+      ...(meta || {})
+    };
+    L0['__' + name + 'Failed'] = true;
+  };
 
   if (!L0.__menuQueue) {
-    L0.__menuQueue = []; L0.__subMenuQueue = [];
-    L0.registerMenu = function(key, cb) { L0.__menuQueue.push({ key, cb }); };
-    L0.registerSubMenu = function(key, cb) { L0.__subMenuQueue.push({ key, cb }); };
+    const _mq = [];
+    const _smq = [];
+    L0.__menuQueue = _mq;
+    L0.__subMenuQueue = _smq;
+    L0.registerMenu = function(key, cb) { _mq.push({ key, cb }); };
+    L0.registerSubMenu = function(key, cb) { _smq.push({ key, cb }); };
   }
 
-  if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
+  if (!_w.__LoreInjReady) {
+    let _resolve;
+    const p = new Promise(r => { _resolve = r; });
+    p.__resolve = _resolve;
+    _w.__LoreInjReady = p;
+  }
 
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
@@ -160,7 +179,7 @@
             }
           }
         }
-      } catch (e) { }
+      } catch (e) { console.error('[Lore] early fetch hook err:', e); }
       return origFetch.apply(this, args);
     };
 
@@ -171,7 +190,7 @@
   installEarlyInterceptor();
 
   // =====================================================================
-  // [1.7.7 패치] 에러 유발 줄바꿈(\n) 완전 제거 및 밀착 패치
+  // [1.7.8 패치] 마커 내부 공백 제거 (\n 완전히 배제)
   // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
   
@@ -181,11 +200,10 @@
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
-        // .trim()을 통해 맨 앞, 맨 뒤에 딸려오는 쓸데없는 엔터 공백 제거
         let loreBlock = injected.replace(userText, '').trim();
         if (!loreBlock) return userText;
 
-        // 위험한 \n 제거! 유저 텍스트 바로 뒤에 마커를 바짝 붙여서 안전하게 전송
+        // 엔터(\n) 없이 바로 ⦗ 붙여서 완벽 밀착 전송 (서버 에러 방지)
         return userText + '⦗' + loreBlock + '⦘';
 
       } catch (e) {
@@ -224,7 +242,6 @@
     `);
   } catch(_) {}
 
-  // 화면 새로고침 시에도 지속적으로 버튼을 변경하는 함수
   function patchChasmButton() {
     const allButtons = document.querySelectorAll('button');
     for (const btn of allButtons) {
@@ -234,7 +251,6 @@
       
       if (!isChasmBtn) continue;
 
-      // 이미 처리된 버튼이라도, 내용물이 다시 덮어씌워졌다면 강제로 복구
       if (btn.dataset.eriePatched === '1') {
         if (btn.innerHTML !== '♡') btn.innerHTML = '♡';
         continue;
@@ -247,7 +263,7 @@
   }
 
   // =====================================================================
-  // [스마트 지우개] 화면에서 마커(⦗ ⦘) 안의 내용 삭제
+  // [스마트 지우개]
   // =====================================================================
   function eraseLoreHTML() {
     try {
@@ -265,7 +281,6 @@
       const processed = new Set();
       elements.forEach(el => {
         if (!processed.has(el)) {
-          // 마커 앞의 엔터(\n, <br>)나 공백까지 여백 없이 깔끔하게 지움
           el.innerHTML = el.innerHTML.replace(/(?:<br\s*\/?>|\n|\s)*⦗[\s\S]*?⦘/gi, '');
           let parent = el.parentNode;
           while(parent) { processed.add(parent); parent = parent.parentNode; }
@@ -274,7 +289,6 @@
     } catch (e) {}
   }
 
-  // 핵심: 지우개와 버튼 패치를 묶어서 전역 감시 (화면이 갱신되어도 무조건 유지됨)
   const domObserver = new MutationObserver(() => {
     eraseLoreHTML();
     patchChasmButton();
@@ -282,27 +296,91 @@
   domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   setInterval(() => { eraseLoreHTML(); patchChasmButton(); }, 1000);
 
-  // (아래는 로더 핵심 파일 호출부)
-  function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
-  function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
-  function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
+
+  // =====================================================================
+  // [여기서부터 원본 로더 스크립트 100% 원상복구 구역 (절대 건드리지 않음)]
+  // =====================================================================
+  function isChatPath(path = location.pathname) {
+    return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
+      || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path)
+      || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path);
+  }
+
+  function isHomePath(path = location.pathname) {
+    return path === '/' || path === '';
+  }
+
+  function updateRoute() {
+    L0.route = {
+      isChat: isChatPath(),
+      isHome: isHomePath(),
+      path: location.pathname,
+      href: location.href
+    };
+  }
 
   function onRouteChange(cb) {
     let last = location.href;
-    const fire = () => { if (last === location.href) return; last = location.href; updateRoute(); try { cb(); } catch (e) {} };
+    const fire = () => {
+      if (last === location.href) return;
+      last = location.href;
+      updateRoute();
+      try { cb(); } catch (e) { console.warn('[LoreInj] routechange callback 실패:', e); }
+    };
     const patchHistory = (name) => {
       const orig = history[name];
       if (!orig || orig.__lorePatched) return;
-      history[name] = function() { const ret = orig.apply(this, arguments); setTimeout(fire, 0); return ret; };
+      history[name] = function() {
+        const ret = orig.apply(this, arguments);
+        setTimeout(fire, 0);
+        return ret;
+      };
       history[name].__lorePatched = true;
     };
     try { patchHistory('pushState'); patchHistory('replaceState'); } catch (_) {}
+    try { new MutationObserver(fire).observe(document.documentElement, { childList: true, subtree: true }); } catch (_) {}
     try { window.addEventListener('popstate', fire); } catch (_) {}
     try { window.addEventListener('hashchange', fire); } catch (_) {}
   }
 
-  Object.assign(L0, { isChatPath, isHomePath, onRouteChange, runWhenChatRoute(init) { if (isChatPath()) return init(); let started = false; onRouteChange(() => { if (started || !isChatPath()) return; started = true; init(); }); }});
+  Object.assign(L0, {
+    isChatPath,
+    isHomePath,
+    onRouteChange,
+    runWhenChatRoute(init) {
+      if (isChatPath()) return init();
+      let started = false;
+      onRouteChange(() => {
+        if (started || !isChatPath()) return;
+        started = true;
+        init();
+      });
+    }
+  });
   updateRoute();
+
+  function showLoaderBadge(text, color = '#4a9') {
+    try {
+      const mount = document.body || document.documentElement;
+      if (!mount) return;
+      let el = document.getElementById('lore-lite-loader-badge');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'lore-lite-loader-badge';
+        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
+        mount.appendChild(el);
+      }
+      el.textContent = text;
+      el.style.borderColor = color;
+    } catch (_) {}
+  }
+
+  function hideLoaderBadge() {
+    try {
+      const el = document.getElementById('lore-lite-loader-badge');
+      if (el) el.remove();
+    } catch (_) {}
+  }
 
   async function fetchText(url) {
     const res = await fetch(url, { cache: 'no-store', credentials: 'omit' });
@@ -313,22 +391,47 @@
   function startReadyGate() {
     const TIMEOUT_MS = 30000;
     const POLL_MS = 50;
+    const SUB_SOFT_WAIT_MS = 7000;
     const gateDeadline = Date.now() + TIMEOUT_MS;
-    const requiredAll = ['__interceptorLoaded', '__constLoaded', '__settingsLoaded', '__extractLoaded', '__injectLoaded', '__inject6Loaded', '__subMainLoaded'];
+    const requiredCore = ['__interceptorLoaded', '__constLoaded', '__settingsLoaded', '__extractLoaded', '__injectLoaded', '__inject6Loaded'];
+    const requiredSubs = ['__subMainLoaded', '__subLoreLoaded', '__subMergeLoaded', '__subSnapshotLoaded', '__subFileLoaded', '__subExtractLoaded', '__subRefinerLoaded', '__subLogLoaded', '__subSessionLoaded', '__subApiLoaded', '__subHelpLoaded'];
+    const requiredAll = requiredCore.concat(requiredSubs);
     let settled = false;
 
     const settle = (payload) => {
       if (settled) return;
       settled = true;
       try { _w.__LoreInjReady.__resolve(payload); } catch (_) {}
+      try { _w.dispatchEvent(new CustomEvent('LoreInj:ready', { detail: payload })); } catch (_) {}
     };
 
     const check = () => {
       const L = _w.__LoreInj;
-      const missing = requiredAll.filter(k => !L[k]);
-      if (missing.length === 0) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION }); return; }
+      updateRoute();
+      const missingCore = requiredCore.filter(k => !L[k]);
+      const missingSubs = requiredSubs.filter(k => !L[k]);
+      if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
+      if (missingCore.length === 0 && missingSubs.length === 0) {
+        L.allReady = true;
+        console.log('[LoreInj v' + (L.VER || LOADER_VERSION) + '] 게이트 통과: 전체 모듈 로드');
+        settle({ ok: true, ver: L.VER || LOADER_VERSION });
+        hideLoaderBadge();
+        return;
+      }
+      if (missingCore.length === 0 && missingSubs.length > 0 && Date.now() - (L.__gateCoreReadyAt || Date.now()) >= SUB_SOFT_WAIT_MS) {
+        L.allReady = true;
+        L.partialReady = true;
+        L.missingSubs = missingSubs;
+        console.warn('[LoreInj] 서브모듈 일부 미로드 — partial gate:', missingSubs);
+        settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true, missingSubs, moduleStatus: L.moduleStatus || {} });
+        hideLoaderBadge();
+        return;
+      }
       if (Date.now() < gateDeadline) return setTimeout(check, POLL_MS);
-      settle({ ok: false, reason: 'timeout' });
+      const missing = requiredAll.filter(k => !L[k]);
+      console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
+      settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
+      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
     };
     check();
   }
@@ -336,18 +439,32 @@
   async function loadHeavyModules() {
     if (L0.__dynamicLoadStarted || L0.__dynamicLoaded) return;
     L0.__dynamicLoadStarted = true;
+    L0.__dynamicLoadStartedAt = Date.now();
+    showLoaderBadge('로어 모듈 로드 중');
     try {
       const codes = await Promise.all(MODULES.map(async (url) => {
         const code = await fetchText(url);
         return '\n/* ---- ' + url + ' ---- */\n' + code;
       }));
-      eval(codes.join('\n'));
+      const bundle = codes.join('\n');
+      eval(bundle);
       L0.__dynamicLoaded = true;
+      L0.__dynamicLoadedAt = Date.now();
       startReadyGate();
     } catch (e) {
-      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed' }); } catch (_) {}
+      L0.__dynamicLoadError = String(e && e.message || e);
+      console.error('[LoreInj] 동적 로드 실패:', e);
+      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
+      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
     }
   }
 
-  if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
+  if (isChatPath()) {
+    loadHeavyModules();
+  } else {
+    console.log('[LoreInj loader ' + LOADER_VERSION + '] non-chat route: heavy modules deferred', location.pathname);
+    onRouteChange(() => {
+      if (isChatPath()) loadHeavyModules();
+    });
+  }
 })();
