@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.6 (UI 완전 복구 및 안정화)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.4 (불렛 방지 패치)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.6
-// @description 1.8.4의 완벽한 UI 복구 + 2턴 멈춤 현상 해결
+// @version     1.8.4
+// @description 브릿지 지우개 + 불렛(-) 방지 처리 (완벽한 투명화 완성)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.8.6';
+  const LOADER_VERSION = '1.8.4';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -72,21 +72,47 @@
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
   L0.moduleStatus = L0.moduleStatus || {};
-  L0.markLoaded = L0.markLoaded || function(name, meta) { L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) }; L0['__' + name + 'Loaded'] = true; };
-  L0.markFailed = L0.markFailed || function(name, error, meta) { L0.moduleStatus[name] = { ok: false, time: Date.now(), error: String(error && error.message || error || 'unknown'), ...(meta || {}) }; L0['__' + name + 'Failed'] = true; };
+  L0.markLoaded = L0.markLoaded || function(name, meta) {
+    L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) };
+    L0['__' + name + 'Loaded'] = true;
+  };
+  L0.markFailed = L0.markFailed || function(name, error, meta) {
+    L0.moduleStatus[name] = {
+      ok: false,
+      time: Date.now(),
+      error: String(error && error.message || error || 'unknown'),
+      ...(meta || {})
+    };
+    L0['__' + name + 'Failed'] = true;
+  };
 
-  if (!L0.__menuQueue) { L0.__menuQueue = []; L0.__subMenuQueue = []; L0.registerMenu = function(key, cb) { L0.__menuQueue.push({ key, cb }); }; L0.registerSubMenu = function(key, cb) { L0.__subMenuQueue.push({ key, cb }); }; }
-  if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
+  if (!L0.__menuQueue) {
+    const _mq = [];
+    const _smq = [];
+    L0.__menuQueue = _mq;
+    L0.__subMenuQueue = _smq;
+    L0.registerMenu = function(key, cb) { _mq.push({ key, cb }); };
+    L0.registerSubMenu = function(key, cb) { _smq.push({ key, cb }); };
+  }
 
-  // 알림 팝업 함수 (1.8.4 방식 복구)
+  if (!_w.__LoreInjReady) {
+    let _resolve;
+    const p = new Promise(r => { _resolve = r; });
+    p.__resolve = _resolve;
+    _w.__LoreInjReady = p;
+  }
+
   function showLoreToast(msg, isSuccess) {
     try {
       const id = 'lore-inject-toast';
-      let el = document.getElementById(id); if (el) el.remove();
-      el = document.createElement('div'); el.id = id;
+      let el = document.getElementById(id);
+      if (el) el.remove();
+      el = document.createElement('div');
+      el.id = id;
       el.style.cssText = `position:fixed;right:20px;bottom:20px;z-index:2147483647;background:#1a1a1a;border:1px solid ${isSuccess ? '#4a9' : '#d66'};border-radius:10px;padding:10px 16px;font-size:13px;color:#eee;box-shadow:0 4px 12px rgba(0,0,0,.5);pointer-events:none;transition:opacity 0.3s;`;
-      el.textContent = msg; document.body.appendChild(el);
-      setTimeout(() => { if(el) el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
     } catch(e) {}
   }
 
@@ -104,21 +130,27 @@
 
     _w.WebSocket.prototype.send = function(data) {
       const ws = this;
-      if (injectFn && typeof data === 'string' && data.length > 10 && data.includes('"send"')) {
-        try {
-          const bi = data.indexOf('[');
-          const prefix = data.slice(0, bi);
-          const arr = JSON.parse(data.slice(bi));
-          if (arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string') {
-            const orig = arr[1].message;
-            (async () => {
-              const mod = await injectText(orig);
-              if (orig !== mod) { arr[1].message = mod; origWsSend.call(ws, prefix + JSON.stringify(arr)); } 
-              else { origWsSend.call(ws, data); }
-            })();
-            return;
-          }
-        } catch (_) {}
+      if (injectFn && typeof data === 'string' && data.length > 10) {
+        const bi = data.indexOf('[');
+        if (bi > 0) {
+          try {
+            const prefix = data.slice(0, bi);
+            const arr = JSON.parse(data.slice(bi));
+            if (Array.isArray(arr) && arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string' && arr[1].message.length > 0) {
+              const orig = arr[1].message;
+              (async () => {
+                const mod = await injectText(orig);
+                if (orig !== mod) {
+                  arr[1].message = mod;
+                  origWsSend.call(ws, prefix + JSON.stringify(arr));
+                } else {
+                  origWsSend.call(ws, data);
+                }
+              })();
+              return;
+            }
+          } catch (_) {}
+        }
       }
       return origWsSend.call(this, data);
     };
@@ -126,21 +158,32 @@
     _w.fetch = async function(...args) {
       try {
         if (injectFn) {
-          let reqUrl = (args[0] instanceof Request) ? args[0].url : String(args[0] || '');
-          if (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai')) {
-            let bodyText = (args[0] instanceof Request) ? await args[0].clone().text() : (args[1] && typeof args[1].body === 'string' ? args[1].body : null);
+          let reqUrl = '', isReq = false;
+          if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; }
+          else reqUrl = String(args[0] || '');
+          const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
+          if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
+            let bodyText = null;
+            if (isReq) { try { bodyText = await args[0].clone().text(); } catch (_) {} }
+            else if (args[1] && typeof args[1].body === 'string') bodyText = args[1].body;
             if (bodyText) {
-              let body = JSON.parse(bodyText);
-              if (body && body.messages) {
-                const lastMsg = body.messages[body.messages.length - 1];
-                if (lastMsg && lastMsg.role === 'user') {
-                  const mod = await injectText(lastMsg.content);
-                  if (lastMsg.content !== mod) {
-                    lastMsg.content = mod;
-                    const newBodyText = JSON.stringify(body);
-                    if (args[0] instanceof Request) args[0] = new Request(args[0], { body: newBodyText });
-                    else { args[1] = args[1] || {}; args[1].body = newBodyText; }
+              let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
+              if (body && typeof body === 'object') {
+                let injected = false;
+                if (Array.isArray(body.messages)) {
+                  for (let i = body.messages.length - 1; i >= 0; i--) {
+                    if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
+                      const orig = body.messages[i].content;
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { body.messages[i].content = mod; injected = true; }
+                      break;
+                    }
                   }
+                }
+                if (injected) {
+                  const newBodyText = JSON.stringify(body);
+                  if (isReq) args[0] = new Request(args[0], { body: newBodyText });
+                  else { args[1] = args[1] || {}; args[1].body = newBodyText; }
                 }
               }
             }
@@ -150,63 +193,129 @@
       return origFetch.apply(this, args);
     };
 
-    // [1.8.6 핵심] 중복 덮어씌우기 방지 태그 추가
-    _w.__loreRegister = function(fn) {
-      if (fn.__eriePatched) return; // 이미 우리 마커 로직이 붙어있다면 또 붙이지 않음
-      
-      const newFn = async function(text) {
+    _w.__loreRegister = function(fn) { 
+      injectFn = async function(text) {
         try {
           const injected = await fn(text);
           if (!injected || injected === text) return text;
           let loreBlock = injected.replace(text, '').trim();
           if (!loreBlock) return text;
           
-          loreBlock = loreBlock.replace(/^- /gm, '‐ '); // 불렛 방지
+          // [1.8.4] 불렛 방지 패치: 줄 시작의 "- "를 특수 하이픈 "‐ "으로 교체
+          // 이렇게 하면 사이트 엔진이 불렛 목록을 만들지 않아 지우개가 완벽히 지웁니다.
+          loreBlock = loreBlock.replace(/^- /gm, '‐ '); 
+
           showLoreToast('✨ 로어 인젝트 완료!', true);
           return text + '\n\n⦗\n' + loreBlock + '\n⦘';
         } catch(e) {
           showLoreToast('🚨 로어 인젝트 오류!', false);
           return text;
         }
-      };
-      newFn.__eriePatched = true; // 방어막 표시
-      injectFn = newFn;
+      }; 
     };
     L0.__interceptorLoaded = true;
+    L0.__earlyInterceptorLoaded = true;
   }
+
   installEarlyInterceptor();
 
-  // 하트 버튼 스타일 (1.8.4 방식 복구)
-  try {
-    GM_addStyle(`
-      .erie-heart-btn { display: inline-flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; border-radius: 6px !important; background: transparent !important; color: #555 !important; font-size: 16px !important; border: 1px solid #E6E6E6 !important; cursor: pointer !important; transition: background 0.2s !important; margin-right: -8px !important; z-index: 10 !important; box-sizing: border-box !important; }
-      .erie-heart-btn:last-of-type { margin-right: -4px !important; }
-      .erie-heart-btn:hover { background: #f5f5f5 !important; }
-      body[data-theme="dark"] .erie-heart-btn { border-color: #42413D !important; color: #F0EFEB !important; }
-      body[data-theme="dark"] .erie-heart-btn:hover { background: #333 !important; }
-    `);
-  } catch(_) {}
+  function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
+  function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
+  function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
 
-  function patchChasmButton() {
-    const allButtons = document.querySelectorAll('button');
-    for (const btn of allButtons) {
-      if (((btn.textContent||'').includes('Chasm') || (btn.innerHTML||'').includes('🔥')) && btn.dataset.eriePatched !== '1') {
-        btn.dataset.eriePatched = '1'; btn.innerHTML = '♡'; btn.classList.add('erie-heart-btn');
-        const obs = new MutationObserver(() => { if (btn.innerHTML !== '♡') btn.innerHTML = '♡'; }); 
-        obs.observe(btn, { childList: true, characterData: true, subtree: true });
-      }
-    }
+  function onRouteChange(cb) {
+    let last = location.href;
+    const fire = () => { if (last === location.href) return; last = location.href; updateRoute(); try { cb(); } catch (e) {} };
+    const patchHistory = (name) => {
+      const orig = history[name];
+      if (!orig || orig.__lorePatched) return;
+      history[name] = function() { const ret = orig.apply(this, arguments); setTimeout(fire, 0); return ret; };
+      history[name].__lorePatched = true;
+    };
+    try { patchHistory('pushState'); patchHistory('replaceState'); } catch (_) {}
+    try { new MutationObserver(fire).observe(document.documentElement, { childList: true, subtree: true }); } catch (_) {}
+    try { window.addEventListener('popstate', fire); } catch (_) {}
+    try { window.addEventListener('hashchange', fire); } catch (_) {}
   }
 
-  // 지우개 (1.8.4 방식 보존)
+  Object.assign(L0, { isChatPath, isHomePath, onRouteChange, runWhenChatRoute(init) { if (isChatPath()) return init(); let started = false; onRouteChange(() => { if (started || !isChatPath()) return; started = true; init(); }); }});
+  updateRoute();
+
+  function showLoaderBadge(text, color = '#4a9') {
+    try {
+      const mount = document.body || document.documentElement;
+      if (!mount) return;
+      let el = document.getElementById('lore-lite-loader-badge');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'lore-lite-loader-badge';
+        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
+        mount.appendChild(el);
+      }
+      el.textContent = text;
+      el.style.borderColor = color;
+    } catch (_) {}
+  }
+
+  function hideLoaderBadge() {
+    try { const el = document.getElementById('lore-lite-loader-badge'); if (el) el.remove(); } catch (_) {}
+  }
+
+  async function fetchText(url) {
+    const res = await fetch(url, { cache: 'no-store', credentials: 'omit' });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + url);
+    return res.text();
+  }
+
+  function startReadyGate() {
+    const TIMEOUT_MS = 30000;
+    const POLL_MS = 50;
+    const SUB_SOFT_WAIT_MS = 7000;
+    const gateDeadline = Date.now() + TIMEOUT_MS;
+    const requiredCore = ['__interceptorLoaded', '__constLoaded', '__settingsLoaded', '__extractLoaded', '__injectLoaded', '__inject6Loaded'];
+    const requiredSubs = ['__subMainLoaded', '__subLoreLoaded', '__subMergeLoaded', '__subSnapshotLoaded', '__subFileLoaded', '__subExtractLoaded', '__subRefinerLoaded', '__subLogLoaded', '__subSessionLoaded', '__subApiLoaded', '__subHelpLoaded'];
+    const requiredAll = requiredCore.concat(requiredSubs);
+    let settled = false;
+    const settle = (payload) => { if (settled) return; settled = true; try { _w.__LoreInjReady.__resolve(payload); } catch (_) {} };
+    const check = () => {
+      const L = _w.__LoreInj;
+      updateRoute();
+      const missingCore = requiredCore.filter(k => !L[k]);
+      const missingSubs = requiredSubs.filter(k => !L[k]);
+      if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
+      if (missingCore.length === 0 && missingSubs.length === 0) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION }); hideLoaderBadge(); return; }
+      if (missingCore.length === 0 && missingSubs.length > 0 && Date.now() - (L.__gateCoreReadyAt || Date.now()) >= SUB_SOFT_WAIT_MS) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true }); hideLoaderBadge(); return; }
+      if (Date.now() < gateDeadline) return setTimeout(check, POLL_MS);
+      settle({ ok: false, reason: 'timeout' }); showLoaderBadge('로어 로드 지연', '#d66');
+    };
+    check();
+  }
+
+  async function loadHeavyModules() {
+    if (L0.__dynamicLoadStarted || L0.__dynamicLoaded) return;
+    L0.__dynamicLoadStarted = true;
+    showLoaderBadge('로어 모듈 로드 중');
+    try {
+      const codes = await Promise.all(MODULES.map(async (url) => { const code = await fetchText(url); return '\n/* ---- ' + url + ' ---- */\n' + code; }));
+      eval(codes.join('\n'));
+      L0.__dynamicLoaded = true;
+      startReadyGate();
+    } catch (e) { showLoaderBadge('로어 로드 실패', '#d66'); }
+  }
+
+  if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
+
   function eraseLoreSafely() {
     if (!document.body || !document.body.textContent.includes('⦗')) return;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    let node; const allTextNodes = []; while (node = walker.nextNode()) { allTextNodes.push(node); }
+    let node;
+    const allTextNodes = [];
+    while (node = walker.nextNode()) { allTextNodes.push(node); }
     let erasing = false;
     for (let n of allTextNodes) {
         let text = n.nodeValue;
-        let parent = n.parentNode; let isInput = false;
+        let parent = n.parentNode;
+        let isInput = false;
         while(parent) { if (parent.tagName === 'TEXTAREA' || parent.tagName === 'INPUT' || parent.isContentEditable) { isInput = true; break; } parent = parent.parentNode; }
         if (isInput) continue;
         if (text.includes('⦗')) {
@@ -214,55 +323,31 @@
             if (text.includes('⦘')) { n.nodeValue = text.replace(/\s*⦗[\s\S]*?⦘/g, ''); erasing = false; continue; }
             n.nodeValue = text.split('⦗')[0]; continue;
         }
-        if (erasing) { if (text.includes('⦘')) { n.nodeValue = text.split('⦘')[1] || ""; erasing = false; } else { n.nodeValue = ""; } }
+        if (erasing) {
+            if (text.includes('⦘')) { n.nodeValue = text.split('⦘')[1] || ""; erasing = false; }
+            else { n.nodeValue = ""; }
+        }
     }
   }
 
-  // 핵심 로더 게이트 (1.4.0 원본 복구)
-  function showLoaderBadge(text, color = '#4a9') {
-    try {
-      const mount = document.body || document.documentElement;
-      if (!mount) return;
-      let el = document.getElementById('lore-lite-loader-badge');
-      if (!el) { el = document.createElement('div'); el.id = 'lore-lite-loader-badge'; el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;'; mount.appendChild(el); }
-      el.textContent = text; el.style.borderColor = color;
-    } catch (_) {}
+  function patchChasmButton() {
+    const allButtons = document.querySelectorAll('button');
+    for (const btn of allButtons) {
+      if ((btn.textContent||'').includes('Chasm') || (btn.innerHTML||'').includes('🔥')) {
+        if (btn.dataset.eriePatched === '1') continue;
+        btn.dataset.eriePatched = '1';
+        btn.innerHTML = '♡';
+        btn.style.cssText = "display:inline-flex!important;align-items:center!important;justify-content:center!important;width:36px!important;height:36px!important;border-radius:6px!important;background:transparent!important;color:#555!important;font-size:16px!important;border:1px solid #E6E6E6!important;cursor:pointer!important;transition:background 0.2s!important;margin-right:-8px!important;z-index:10!important;";
+        const obs = new MutationObserver(() => { if (btn.innerHTML !== '♡') btn.innerHTML = '♡'; });
+        obs.observe(btn, { childList: true, characterData: true, subtree: true });
+      }
+    }
   }
-
-  async function fetchText(url) { const res = await fetch(url); return await res.text(); }
-
-  function startReadyGate() {
-    const TIMEOUT_MS = 30000;
-    const requiredCore = ['__interceptorLoaded', '__constLoaded', '__settingsLoaded', '__extractLoaded', '__injectLoaded', '__inject6Loaded'];
-    const requiredSubs = ['__subMainLoaded', '__subLoreLoaded', '__subMergeLoaded', '__subSnapshotLoaded', '__subFileLoaded', '__subExtractLoaded', '__subRefinerLoaded', '__subLogLoaded', '__subSessionLoaded', '__subApiLoaded', '__subHelpLoaded'];
-    const requiredAll = requiredCore.concat(requiredSubs);
-    const check = () => {
-      const L = _w.__LoreInj;
-      const missing = requiredAll.filter(k => !L[k]);
-      if (missing.length === 0) { L.allReady = true; try { _w.__LoreInjReady.__resolve({ ok: true }); } catch (_) {} document.getElementById('lore-lite-loader-badge')?.remove(); return; }
-      setTimeout(check, 100);
-    };
-    check();
-  }
-
-  async function loadHeavyModules() {
-    if (L0.__dynamicLoadStarted) return; L0.__dynamicLoadStarted = true;
-    showLoaderBadge('로어 모듈 로드 중');
-    try {
-      const codes = await Promise.all(MODULES.map(async (url) => { return await fetchText(url); }));
-      eval(codes.join('\n'));
-      L0.__dynamicLoaded = true; startReadyGate();
-    } catch (e) { showLoaderBadge('로드 실패', '#d66'); }
-  }
-
-  function isChatPath() { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(location.pathname); }
-  function updateRoute() { if (isChatPath()) loadHeavyModules(); }
-  function onRouteChange(cb) { let last = location.href; setInterval(() => { if (last !== location.href) { last = location.href; cb(); } }, 500); }
-
-  updateRoute(); onRouteChange(updateRoute);
 
   _w.__LoreInjReady.then(() => { 
       setInterval(eraseLoreSafely, 1000); 
       setInterval(patchChasmButton, 2000); 
   });
+  onRouteChange(() => { setTimeout(patchChasmButton, 1000); });
+
 })();
