@@ -118,27 +118,15 @@
     function hideLoreAndFormat(orig, mod) {
         if (orig === mod) return mod; // 변경점이 없으면 그대로 반환
         try {
-            // 1. 원본(orig)과 최종본(mod)을 비교해 추가된 로어만 정확히 추출
-            //    가장 안전한 방법은 원본 텍스트를 최종본에서 제거하는 것입니다.
             const loreText = mod.replace(orig, '').trim();
-
-            // 로어가 비어있다면 (공백만 다른 경우 등) 원본을 그대로 사용
             if (!loreText) return orig;
 
-            // 2. 줄바꿈(\n)을 공백으로 치환하여 한 줄로 만듦
-            // 3. 큰따옴표(")를 작은따옴표(')로 바꿔 마크다운 충돌 방지
             const oneLineLore = loreText.replace(/\n/g, ' ').replace(/"/g, "'");
-
-            // 5. 시스템 안내 문구 정의
             const systemMessage = '[System: Established world/character facts for this scene. Do not repeat verbatim.] ';
-
-            // 4. 마크다운 주석 형식으로 로어를 감쌈
             const hiddenLore = `\n[//]: # "${systemMessage}${oneLineLore}"`;
-
-            // 6. 사용자가 입력한 원본 텍스트와 숨겨진 로어를 합침
+            
             return orig + hiddenLore;
         } catch (e) {
-            // 7. 에러 발생 시 채팅 전송이 막히지 않도록 원본(mod)을 그대로 보냄
             console.error('[Lore Injector] 로어 숨김 처리 중 오류 발생:', e);
             return mod;
         }
@@ -164,7 +152,6 @@
               const orig = arr[1].message;
               (async () => {
                 const mod = await injectText(orig);
-                // [수정] 로어 숨김 처리 함수 호출
                 arr[1].message = hideLoreAndFormat(orig, mod);
                 origWsSend.call(ws, prefix + JSON.stringify(arr));
               })();
@@ -190,41 +177,37 @@
             if (bodyText) {
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
-                let injected = false;
                 let originalText = '';
                 let textModified = false;
 
-                const modifyContent = (obj, key) => {
+                const modifyContent = async (obj, key) => {
                     if (typeof obj[key] === 'string') {
                         originalText = obj[key];
-                        return injectText(originalText).then(modifiedText => {
-                            if (originalText !== modifiedText) {
-                                // [수정] 로어 숨김 처리 함수 호출
-                                obj[key] = hideLoreAndFormat(originalText, modifiedText);
-                                textModified = true;
-                            }
-                        });
+                        const modifiedText = await injectText(originalText);
+                        if (originalText !== modifiedText) {
+                            obj[key] = hideLoreAndFormat(originalText, modifiedText);
+                            textModified = true;
+                        }
                     }
-                    return Promise.resolve();
                 };
-
+                
                 const findAndModify = async (b) => {
                     if (Array.isArray(b.messages)) {
                         for (let i = b.messages.length - 1; i >= 0; i--) {
-                            if (b.messages[i].role === 'user') {
+                            if (b.messages[i].role === 'user' && typeof b.messages[i].content === 'string') {
                                 await modifyContent(b.messages[i], 'content');
                                 if (textModified) return;
                             }
                         }
                     }
                     for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                        await modifyContent(b, key);
                         if (textModified) return;
+                        await modifyContent(b, key);
                     }
                     if (b.variables && typeof b.variables === 'object') {
                         for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                            await modifyContent(b.variables, key);
                             if (textModified) return;
+                            await modifyContent(b.variables, key);
                         }
                     }
                 };
@@ -424,7 +407,6 @@
 
   // [수정 조건 2] 버튼 디자인 덮어쓰기 (IIFE)
   (function () {
-    // 4. CSS 정의 및 주입
     function injectButtonStyles() {
         if (document.getElementById('crack-chasm-btn-style')) return;
         const style = document.createElement('style');
@@ -436,6 +418,8 @@
                 justify-content: center !important;
                 width: 36px !important;
                 height: 36px !important;
+                min-width: 36px !important; /* 추가 */
+                min-height: 36px !important; /* 추가 */
                 border-radius: 6px !important;
                 background: transparent !important;
                 color: #555 !important;
@@ -444,12 +428,13 @@
                 cursor: pointer !important;
                 transition: background-color 0.2s !important;
                 z-index: 10 !important;
-                padding: 0 !important; /* 인라인 스타일 무력화 */
+                padding: 0 !important;
+                margin: 0 !important; /* 추가 */
+                box-sizing: border-box !important; /* 추가 */
             }
             .crack-uni-btn-chasm:hover {
                 background: #f5f5f5 !important;
             }
-            /* 다크모드 대응 */
             body[data-theme="dark"] .crack-uni-btn-chasm {
                 border-color: #42413D !important;
                 color: #F0EFEB !important;
@@ -461,36 +446,51 @@
         document.head.appendChild(style);
     }
 
-    function styleChasmButton() {
-        const buttons = document.querySelectorAll('button');
-        buttons.forEach(btn => {
-            // 2. '🔥' 기호와 'chasm tools' 텍스트를 포함한 버튼 감지
-            const hasText = btn.textContent.includes('🔥') && btn.textContent.includes('chasm tools');
-            const isAlreadyStyled = btn.classList.contains('crack-uni-btn-chasm');
+    function processNode(node) {
+        if (!node || typeof node.querySelectorAll !== 'function') return;
+        
+        // node 자체가 버튼일 경우와, node 내부에 버튼이 생성된 경우 모두 처리
+        const buttons = node.matches('button') ? [node] : node.querySelectorAll('button');
 
-            if (hasText && !isAlreadyStyled) {
+        buttons.forEach(btn => {
+            // "chasm tools" 텍스트를 포함하고, 아직 처리되지 않은 버튼을 찾습니다.
+            const hasText = btn.textContent.includes('chasm tools');
+            const isStyled = btn.dataset.chasmStyled;
+
+            if (hasText && !isStyled) {
+                // 처리되었다고 표시하여 중복 실행 방지
+                btn.dataset.chasmStyled = 'true';
+                
                 // 텍스트를 '♡'로 변경
-                btn.textContent = '♡';
-                // 3. 클래스 추가 및 인라인 스타일 무력화
+                // 자식 노드를 모두 지우고 텍스트를 넣어야 아이콘만 남습니다.
+                btn.innerHTML = '♡';
+                
+                // 클래스 추가 및 인라인 스타일 초기화
                 btn.classList.add('crack-uni-btn-chasm');
-                // 기존 인라인 스타일을 비워서 CSS가 우선 적용되도록 함
-                btn.style.cssText = '';
+                btn.style.cssText = ''; 
             }
         });
     }
 
-    // 스타일을 먼저 주입
+    // 1. 스크립트 시작 시점에 스타일 주입
     injectButtonStyles();
 
-    // 1. MutationObserver로 DOM 감시
-    const observer = new MutationObserver(styleChasmButton);
+    // 2. MutationObserver로 DOM의 모든 변화를 감지
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach(mutation => {
+            // 새로 추가된 모든 노드에 대해 버튼 처리 함수를 실행
+            mutation.addedNodes.forEach(node => processNode(node));
+        });
+    });
+
+    // 감시 시작
     observer.observe(document.body, {
         childList: true,
         subtree: true
     });
 
-    // 페이지 로드 시 즉시 한번 실행
-    styleChasmButton();
+    // 3. 페이지가 이미 로드된 상태일 수 있으므로, 현재 존재하는 모든 버튼에 대해 한번 실행
+    processNode(document.body);
   })();
 
 })();
