@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.7.4 로직 완전 복구판
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.7.4 복구 및 렉 제로 패치
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.8
-// @description 모듈화된 로어 인젝터 로더 (삽입/지우개 1.7.4 원본 복구 + 렉/로딩 해결)
+// @version     1.7.9
+// @description 모듈화된 로어 인젝터 로더 (1.7.4 원본 삽입 + 렉 없는 투명화)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.8';
+  const LOADER_VERSION = '1.7.9';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -83,170 +83,138 @@
 
   if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
-  // [기본] 인터셉터
+  // =====================================================================
+  // [기본] 핵심 인터셉터 설치
+  // =====================================================================
   function installEarlyInterceptor() {
-      if (L0.__interceptorLoaded) return;
-      const origFetch = _w.fetch && _w.fetch.bind(_w);
-      const origWsSend = _w.WebSocket && _w.WebSocket.prototype && _w.WebSocket.prototype.send;
-      if (!origFetch || !origWsSend) return;
-      let injectFn = null;
+    if (L0.__interceptorLoaded) return;
+    const origFetch = _w.fetch && _w.fetch.bind(_w);
+    const origWsSend = _w.WebSocket && _w.WebSocket.prototype && _w.WebSocket.prototype.send;
+    if (!origFetch || !origWsSend) return;
+    let injectFn = null;
 
-      async function injectText(text) {
-          if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
-          try { return await injectFn(text); } catch (e) { return text; }
-      }
+    async function injectText(text) {
+      if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
+      try { return await injectFn(text); } catch (e) { return text; }
+    }
 
-      _w.WebSocket.prototype.send = function(data) {
-          const ws = this;
-          if (injectFn && typeof data === 'string' && data.length > 10) {
-              const bi = data.indexOf('[');
-              if (bi > 0) {
-                  try {
-                      const prefix = data.slice(0, bi);
-                      const arr = JSON.parse(data.slice(bi));
-                      if (Array.isArray(arr) && arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string' && arr[1].message.length > 0) {
-                          const orig = arr[1].message;
-                          (async () => {
-                              const mod = await injectText(orig);
-                              if (orig !== mod) { arr[1].message = mod; origWsSend.call(ws, prefix + JSON.stringify(arr)); } else { origWsSend.call(ws, data); }
-                          })();
-                          return;
-                      }
-                  } catch (_) {}
-              }
-          }
-          return origWsSend.call(this, data);
-      };
-
-      _w.fetch = async function(...args) {
+    _w.WebSocket.prototype.send = function(data) {
+      const ws = this;
+      if (injectFn && typeof data === 'string' && data.length > 10) {
+        const bi = data.indexOf('[');
+        if (bi > 0) {
           try {
-              if (injectFn) {
-                  let reqUrl = '', isReq = false;
-                  if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; } else reqUrl = String(args[0] || '');
-                  const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
-                  if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
-                      let bodyText = null;
-                      if (isReq) { try { bodyText = await args[0].clone().text(); } catch (_) {} }
-                      else if (args[1] && typeof args[1].body === 'string') bodyText = args[1].body;
-                      if (bodyText) {
-                          let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
-                          if (body && typeof body === 'object') {
-                              let injected = false;
-                              if (Array.isArray(body.messages)) {
-                                  for (let i = body.messages.length - 1; i >= 0; i--) {
-                                      if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
-                                          const orig = body.messages[i].content;
-                                          const mod = await injectText(orig);
-                                          if (orig !== mod) { body.messages[i].content = mod; injected = true; }
-                                          break;
-                                      }
-                                  }
-                              }
-                              if (injected) {
-                                  const newBodyText = JSON.stringify(body);
-                                  if (isReq) args[0] = new Request(args[0], { body: newBodyText });
-                                  else { args[1] = args[1] || {}; args[1].body = newBodyText; }
-                              }
-                          }
-                      }
-                  }
-              }
-          } catch (e) { }
-          return origFetch.apply(this, args);
-      };
+            const prefix = data.slice(0, bi);
+            const arr = JSON.parse(data.slice(bi));
+            if (Array.isArray(arr) && arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string' && arr[1].message.length > 0) {
+              const orig = arr[1].message;
+              (async () => {
+                const mod = await injectText(orig);
+                if (orig !== mod) { arr[1].message = mod; origWsSend.call(ws, prefix + JSON.stringify(arr)); } else { origWsSend.call(ws, data); }
+              })();
+              return;
+            }
+          } catch (_) {}
+        }
+      }
+      return origWsSend.call(this, data);
+    };
 
-      _w.__loreRegister = function(fn) { injectFn = fn; };
-      L0.__interceptorLoaded = true;
+    _w.fetch = async function(...args) {
+      try {
+        if (injectFn) {
+          let reqUrl = '', isReq = false;
+          if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; } else reqUrl = String(args[0] || '');
+          const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
+          if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
+            let bodyText = null;
+            if (isReq) { try { bodyText = await args[0].clone().text(); } catch (_) {} }
+            else if (args[1] && typeof args[1].body === 'string') bodyText = args[1].body;
+            if (bodyText) {
+              let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
+              if (body && typeof body === 'object') {
+                let injected = false;
+                if (Array.isArray(body.messages)) {
+                  for (let i = body.messages.length - 1; i >= 0; i--) {
+                    if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
+                      const orig = body.messages[i].content;
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { body.messages[i].content = mod; injected = true; }
+                      break;
+                    }
+                  }
+                }
+                if (injected) {
+                  const newBodyText = JSON.stringify(body);
+                  if (isReq) args[0] = new Request(args[0], { body: newBodyText });
+                  else { args[1] = args[1] || {}; args[1].body = newBodyText; }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) { }
+      return origFetch.apply(this, args);
+    };
+
+    _w.__loreRegister = function(fn) { injectFn = fn; };
+    L0.__interceptorLoaded = true;
   }
   installEarlyInterceptor();
 
   // =====================================================================
-  // [1.7.4 완벽 복구] 로어 삽입 및 마커 부착 로직 (절대 건드리지 않음)
+  // [1.7.4 원본 복구] 로어 삽입 로직 (1글자도 수정하지 않은 원본)
   // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
+  
   _w.__loreRegister = function(fn) {
     _origLoreRegister(async function(userText) {
       try {
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
+        // 1. 설정된 앞/뒤 문구와 줄바꿈이 모두 포함된 순수 로어 블록 추출
         let loreBlock = injected.replace(userText, '').trim();
         if (!loreBlock) return userText;
 
+        // 2. 압축이나 삭제 전혀 없이 원본 그대로 보존하고, 앞뒤에 삭제용 마커(⦗, ⦘)만 부착
         return userText + '\n\n⦗\n' + loreBlock + '\n⦘';
+
       } catch (e) {
+        console.error('[LoreInj] 로어 변환 실패:', e);
         return userText;
       }
     });
   };
 
   // =====================================================================
-  // [1.7.4 완벽 복구] 스마트 지우개 로직 (절대 건드리지 않음)
+  // [렉 제로 + 과거기록 해결] 초경량 말풍선 전용 지우개
   // =====================================================================
-  function eraseLoreHTML() {
-    try {
-      const elements = Array.from(document.querySelectorAll('*'))
-        .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
-      
-      if (elements.length === 0) return;
+  function eraseLoreSafely() {
+    // 문서 안에 마커 기호가 없으면 아예 작동을 멈춰서 CPU 낭비 및 렉 방지
+    if (!document.body || !document.body.innerHTML.includes('⦗')) return;
 
-      elements.sort((a, b) => {
-        let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
-        let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
-        return depthB - depthA;
-      });
+    const elements = document.querySelectorAll('*');
+    for (let i = elements.length - 1; i >= 0; i--) {
+        const el = elements[i];
+        
+        // 🚨 가장 중요한 부분: 타이핑 렉 방지를 위해 입력창은 절.대 건드리지 않음
+        if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable) continue;
+        if (el.querySelector && el.querySelector('textarea, input, [contenteditable="true"]')) continue;
 
-      const processed = new Set();
-      elements.forEach(el => {
-        if (!processed.has(el)) {
-          el.innerHTML = el.innerHTML.replace(/<br>\s*⦗[\s\S]*?⦘/g, '');
-          el.innerHTML = el.innerHTML.replace(/⦗[\s\S]*?⦘/g, '');
-          
-          let parent = el.parentNode;
-          while(parent) { processed.add(parent); parent = parent.parentNode; }
+        // 말풍선 안에 마커가 보이면 싹 지움 (과거 기록도 화면에 나타나면 즉시 지워짐)
+        if (el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘')) {
+            el.innerHTML = el.innerHTML.replace(/<br>\s*⦗[\s\S]*?⦘/g, '').replace(/⦗[\s\S]*?⦘/g, '');
         }
-      });
-    } catch (e) {}
+    }
   }
 
-  // =====================================================================
-  // [렉 해결 & 로딩 해결] 작동 타이머 (가장 똑똑하고 가벼운 감지기)
-  // =====================================================================
-  
-  // 1. 화면에 새 글자가 생겼을 때만 감지 (타이핑 렉 0%)
-  const domObserver = new MutationObserver((mutations) => {
-      let hasMarker = false;
-      for (let m of mutations) {
-          // 키보드 입력일 경우 ⦗ 기호가 포함되었는지만 1초 만에 검사하고 통과
-          if (m.type === 'characterData' && m.target.nodeValue && m.target.nodeValue.includes('⦗')) {
-              hasMarker = true; break;
-          }
-          // 새로운 채팅 말풍선이 로드될 경우 ⦗ 기호 검사
-          if (m.type === 'childList') {
-              for (let n of m.addedNodes) {
-                  if (n.nodeType === 1 && n.innerHTML && n.innerHTML.includes('⦗')) {
-                      hasMarker = true; break;
-                  } else if (n.nodeType === 3 && n.nodeValue && n.nodeValue.includes('⦗')) {
-                      hasMarker = true; break;
-                  }
-              }
-          }
-      }
-      // 마커를 발견했을 때만 1.7.4 지우개 작동!
-      if (hasMarker) eraseLoreHTML();
-  });
-  domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-
-  // 2. 과거 내역 로딩 해결 (1초마다 조용히 확인)
-  setInterval(() => {
-      if (document.body && document.body.innerHTML.includes('⦗')) {
-          eraseLoreHTML();
-      }
-  }, 1000);
+  // 0.5초마다 아주 조용히 말풍선만 확인합니다. 입력창은 무시하므로 렉이 없습니다.
+  setInterval(eraseLoreSafely, 500);
 
 
   // =====================================================================
-  // [1.7.6 완벽 보존] 하트 버튼 기능
+  // [원본 유지] 하트 버튼 기능
   // =====================================================================
   try {
     GM_addStyle(`
