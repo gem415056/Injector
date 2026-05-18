@@ -2,8 +2,8 @@
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
 // @version     1.5.0
-// @description 모듈화된 로어 인젝터 로더
-// @author      로컬AI
+// @description 모듈화된 로어 인젝터 로더 (편의성 패치 적용)
+// @author      로컬AI (수정 by Assistant)
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
 // @downloadURL https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.5.0';
+  const LOADER_VERSION = '1.4.0-test.65';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -109,34 +109,39 @@
     if (!origFetch || !origWsSend) return;
     let injectFn = null;
 
-    // [수정 조건 1] 로어 숨김(투명화) 전용 처리 함수
-    function applyLoreHidden(orig, mod) {
-      if (orig === mod) return mod;
-      try {
-        let lorePart = "";
-        // 원본 유저 입력(orig)을 제거하여 로어 부분만 정확히 발라냄
-        if (mod.includes(orig)) {
-          lorePart = mod.replace(orig, ""); 
-        } else {
-          return mod; 
+    /**
+     * [수정 조건 1] 로어 숨김 처리를 위한 함수
+     * @param {string} orig - 사용자가 입력한 원본 텍스트
+     * @param {string} mod - 로어가 주입된 최종 텍스트
+     * @returns {string} - 로어가 마크다운 주석으로 숨겨진 텍스트
+     */
+    function hideLoreAndFormat(orig, mod) {
+        if (orig === mod) return mod; // 변경점이 없으면 그대로 반환
+        try {
+            // 1. 원본(orig)과 최종본(mod)을 비교해 추가된 로어만 정확히 추출
+            //    가장 안전한 방법은 원본 텍스트를 최종본에서 제거하는 것입니다.
+            const loreText = mod.replace(orig, '').trim();
+
+            // 로어가 비어있다면 (공백만 다른 경우 등) 원본을 그대로 사용
+            if (!loreText) return orig;
+
+            // 2. 줄바꿈(\n)을 공백으로 치환하여 한 줄로 만듦
+            // 3. 큰따옴표(")를 작은따옴표(')로 바꿔 마크다운 충돌 방지
+            const oneLineLore = loreText.replace(/\n/g, ' ').replace(/"/g, "'");
+
+            // 5. 시스템 안내 문구 정의
+            const systemMessage = '[System: Established world/character facts for this scene. Do not repeat verbatim.] ';
+
+            // 4. 마크다운 주석 형식으로 로어를 감쌈
+            const hiddenLore = `\n[//]: # "${systemMessage}${oneLineLore}"`;
+
+            // 6. 사용자가 입력한 원본 텍스트와 숨겨진 로어를 합침
+            return orig + hiddenLore;
+        } catch (e) {
+            // 7. 에러 발생 시 채팅 전송이 막히지 않도록 원본(mod)을 그대로 보냄
+            console.error('[Lore Injector] 로어 숨김 처리 중 오류 발생:', e);
+            return mod;
         }
-        
-        if (!lorePart.trim()) return mod; 
-
-        // 줄바꿈(\n)을 띄어쓰기로 치환
-        let processedLore = lorePart.replace(/\n/g, ' ');
-        // 큰따옴표(")를 작은따옴표(')로 치환
-        processedLore = processedLore.replace(/"/g, "'");
-
-        // 마크다운 주석과 지정된 안내 문구로 단 한 줄로 감싸기
-        const hiddenLore = `\n[//]: # "[System: Established world/character facts for this scene. Do not repeat verbatim.] ${processedLore.trim()}"`;
-
-        // 형태를 건드리지 않은 원본에 숨겨진 로어를 결합
-        return orig + hiddenLore;
-      } catch (e) {
-        console.error('[Lore] hide processing error:', e);
-        return mod; // 에러 시 원본 전송
-      }
     }
 
     async function injectText(text) {
@@ -159,12 +164,9 @@
               const orig = arr[1].message;
               (async () => {
                 const mod = await injectText(orig);
-                if (orig !== mod) {
-                  arr[1].message = applyLoreHidden(orig, mod); // 숨김 처리 적용
-                  origWsSend.call(ws, prefix + JSON.stringify(arr));
-                } else {
-                  origWsSend.call(ws, data);
-                }
+                // [수정] 로어 숨김 처리 함수 호출
+                arr[1].message = hideLoreAndFormat(orig, mod);
+                origWsSend.call(ws, prefix + JSON.stringify(arr));
               })();
               return;
             }
@@ -189,37 +191,47 @@
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
                 let injected = false;
-                if (Array.isArray(body.messages)) {
-                  for (let i = body.messages.length - 1; i >= 0; i--) {
-                    if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
-                      const orig = body.messages[i].content;
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body.messages[i].content = applyLoreHidden(orig, mod); injected = true; } // 숨김 처리 적용
-                      break;
+                let originalText = '';
+                let textModified = false;
+
+                const modifyContent = (obj, key) => {
+                    if (typeof obj[key] === 'string') {
+                        originalText = obj[key];
+                        return injectText(originalText).then(modifiedText => {
+                            if (originalText !== modifiedText) {
+                                // [수정] 로어 숨김 처리 함수 호출
+                                obj[key] = hideLoreAndFormat(originalText, modifiedText);
+                                textModified = true;
+                            }
+                        });
                     }
-                  }
-                }
-                if (!injected) {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body[key] === 'string') {
-                      const orig = body[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body[key] = applyLoreHidden(orig, mod); injected = true; } // 숨김 처리 적용
-                      break;
+                    return Promise.resolve();
+                };
+
+                const findAndModify = async (b) => {
+                    if (Array.isArray(b.messages)) {
+                        for (let i = b.messages.length - 1; i >= 0; i--) {
+                            if (b.messages[i].role === 'user') {
+                                await modifyContent(b.messages[i], 'content');
+                                if (textModified) return;
+                            }
+                        }
                     }
-                  }
-                }
-                if (!injected && body.variables && typeof body.variables === 'object') {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body.variables[key] === 'string') {
-                      const orig = body.variables[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body.variables[key] = applyLoreHidden(orig, mod); injected = true; } // 숨김 처리 적용
-                      break;
+                    for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                        await modifyContent(b, key);
+                        if (textModified) return;
                     }
-                  }
-                }
-                if (injected) {
+                    if (b.variables && typeof b.variables === 'object') {
+                        for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                            await modifyContent(b.variables, key);
+                            if (textModified) return;
+                        }
+                    }
+                };
+
+                await findAndModify(body);
+
+                if (textModified) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
                   else { args[1] = args[1] || {}; args[1].body = newBodyText; }
@@ -409,118 +421,76 @@
       if (isChatPath()) loadHeavyModules();
     });
   }
-})();
 
-// [수정 조건 2] 버튼 디자인 덮어쓰기 로직 (React 호환용 시각적 덮어쓰기 적용)
-(function () {
-  const style = document.createElement('style');
-  // DOM 텍스트 자체를 바꾸지 않고 CSS 가상 요소로 텍스트를 덮어씌워서 
-  // 사이트 프레임워크(React 등)의 에러나 원상복구 현상을 완벽히 차단합니다.
-  style.textContent = `
-    .crack-uni-btn-chasm {
-      width: 36px !important;
-      height: 36px !important;
-      padding: 0 !important;
-      background: transparent !important;
-      border: 1px solid #E6E6E6 !important;
-      border-radius: 4px !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      color: inherit !important;
-      box-shadow: none !important;
-      text-decoration: none !important;
-      cursor: pointer !important;
-      position: relative !important;
-      font-size: 0 !important; /* 원본 텍스트 크기를 0으로 숨김 */
-    }
-    .crack-uni-btn-chasm > * {
-      display: none !important; /* 내부에 있는 원본 span, svg 아이콘 등 모두 숨김 */
-    }
-    .crack-uni-btn-chasm::after {
-      content: '♡' !important;
-      font-size: 16px !important;
-      display: block !important;
-      visibility: visible !important;
-      position: absolute !important;
-      top: 50% !important;
-      left: 50% !important;
-      transform: translate(-50%, -50%) !important;
-      line-height: 1 !important;
-    }
-    @media (prefers-color-scheme: dark) {
-      .crack-uni-btn-chasm { border-color: #444 !important; }
-    }
-    html.dark .crack-uni-btn-chasm, 
-    body.dark-mode .crack-uni-btn-chasm,
-    [data-theme="dark"] .crack-uni-btn-chasm {
-      border-color: #444 !important;
-    }
-  `;
-  document.head.appendChild(style);
-
-  let scanTid = null;
-
-  function requestScan() {
-    if (scanTid) return;
-    scanTid = requestAnimationFrame(() => {
-      scanTid = null;
-      
-      // 화면 내에 해당 텍스트가 존재하는지 초고속 검사 (대소문자 무시)
-      if (!document.body.textContent.toLowerCase().includes('chasm tools')) return;
-
-      // 버튼일 가능성이 있는 모든 요소들 찾기
-      const els = document.querySelectorAll('button, [role="button"], a, div, span');
-      for (let i = 0; i < els.length; i++) {
-        const el = els[i];
-        if (el.classList.contains('crack-uni-btn-chasm')) continue;
-        
-        const text = el.textContent.toLowerCase();
-        // 🔥 아이콘 및 chasm tools 글자 동시 포함 여부 확인
-        if (text.includes('🔥') && text.includes('chasm tools') && text.length < 80) {
-          
-          // 자식 요소들 중 동일한 텍스트를 가진 요소가 있는지 확인하여 가장 안쪽 래퍼를 찾음
-          let hasMatchingChild = false;
-          for (let j = 0; j < el.children.length; j++) {
-            const childText = el.children[j].textContent.toLowerCase();
-            if (childText.includes('🔥') && childText.includes('chasm tools')) {
-              hasMatchingChild = true;
-              break;
+  // [수정 조건 2] 버튼 디자인 덮어쓰기 (IIFE)
+  (function () {
+    // 4. CSS 정의 및 주입
+    function injectButtonStyles() {
+        if (document.getElementById('crack-chasm-btn-style')) return;
+        const style = document.createElement('style');
+        style.id = 'crack-chasm-btn-style';
+        style.textContent = `
+            .crack-uni-btn-chasm {
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 36px !important;
+                height: 36px !important;
+                border-radius: 6px !important;
+                background: transparent !important;
+                color: #555 !important;
+                font-size: 16px !important;
+                border: 1px solid #E6E6E6 !important;
+                cursor: pointer !important;
+                transition: background-color 0.2s !important;
+                z-index: 10 !important;
+                padding: 0 !important; /* 인라인 스타일 무력화 */
             }
-          }
-          
-          // 여기가 가장 안쪽 요소라면
-          if (!hasMatchingChild) {
-            let target = el;
-            // 만약 현재 요소가 버튼 자체가 아니라면 가장 가까운 부모 버튼으로 대상 변경
-            const btn = el.closest('button, [role="button"]');
-            if (btn && btn.textContent.length < 100) {
-              target = btn;
+            .crack-uni-btn-chasm:hover {
+                background: #f5f5f5 !important;
             }
-            
-            // 클래스 주입 및 인라인 스타일 삭제 (CSS !important 가 확실히 먹히도록)
-            target.classList.add('crack-uni-btn-chasm');
-            target.removeAttribute('style');
-          }
-        }
-      }
+            /* 다크모드 대응 */
+            body[data-theme="dark"] .crack-uni-btn-chasm {
+                border-color: #42413D !important;
+                color: #F0EFEB !important;
+            }
+            body[data-theme="dark"] .crack-uni-btn-chasm:hover {
+                background: #333 !important;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function styleChasmButton() {
+        const buttons = document.querySelectorAll('button');
+        buttons.forEach(btn => {
+            // 2. '🔥' 기호와 'chasm tools' 텍스트를 포함한 버튼 감지
+            const hasText = btn.textContent.includes('🔥') && btn.textContent.includes('chasm tools');
+            const isAlreadyStyled = btn.classList.contains('crack-uni-btn-chasm');
+
+            if (hasText && !isAlreadyStyled) {
+                // 텍스트를 '♡'로 변경
+                btn.textContent = '♡';
+                // 3. 클래스 추가 및 인라인 스타일 무력화
+                btn.classList.add('crack-uni-btn-chasm');
+                // 기존 인라인 스타일을 비워서 CSS가 우선 적용되도록 함
+                btn.style.cssText = '';
+            }
+        });
+    }
+
+    // 스타일을 먼저 주입
+    injectButtonStyles();
+
+    // 1. MutationObserver로 DOM 감시
+    const observer = new MutationObserver(styleChasmButton);
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
     });
-  }
 
-  // DOM 변화 감지 (텍스트 변경, 요소 추가 등 모든 상황 대응)
-  const observer = new MutationObserver((mutations) => {
-    let needsScan = false;
-    for (let i = 0; i < mutations.length; i++) {
-      if (mutations[i].addedNodes.length > 0 || mutations[i].type === 'characterData') {
-        needsScan = true;
-        break;
-      }
-    }
-    if (needsScan) requestScan();
-  });
+    // 페이지 로드 시 즉시 한번 실행
+    styleChasmButton();
+  })();
 
-  observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-  
-  // 최초 1회 실행
-  if (document.body) requestScan();
 })();
