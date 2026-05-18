@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.2 (알림 팝업 추가)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.4 (불렛 방지 패치)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.2
-// @description 모듈화된 로어 인젝터 로더 (원본 100% 보존 + 로어 삽입 알림 기능)
+// @version     1.8.4
+// @description 브릿지 지우개 + 불렛(-) 방지 처리 (완벽한 투명화 완성)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.8.2';
+  const LOADER_VERSION = '1.8.4';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -102,31 +102,20 @@
     _w.__LoreInjReady = p;
   }
 
-  // =====================================================================
-  // [팝업 알림 기능] 우측 하단에 3초간 떴다 사라지는 알림창
-  // =====================================================================
   function showLoreToast(msg, isSuccess) {
     try {
       const id = 'lore-inject-toast';
       let el = document.getElementById(id);
       if (el) el.remove();
-      
       el = document.createElement('div');
       el.id = id;
       el.style.cssText = `position:fixed;right:20px;bottom:20px;z-index:2147483647;background:#1a1a1a;border:1px solid ${isSuccess ? '#4a9' : '#d66'};border-radius:10px;padding:10px 16px;font-size:13px;color:#eee;box-shadow:0 4px 12px rgba(0,0,0,.5);pointer-events:none;transition:opacity 0.3s;`;
       el.textContent = msg;
       document.body.appendChild(el);
-      
-      setTimeout(() => {
-        el.style.opacity = '0';
-        setTimeout(() => el.remove(), 300);
-      }, 3000);
+      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
     } catch(e) {}
   }
 
-  // =====================================================================
-  // [핵심 로더] 인터셉터
-  // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -191,16 +180,6 @@
                     }
                   }
                 }
-                if (!injected) {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body[key] === 'string') {
-                      const orig = body[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body[key] = mod; injected = true; }
-                      break;
-                    }
-                  }
-                }
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
@@ -214,24 +193,21 @@
       return origFetch.apply(this, args);
     };
 
-    // =====================================================================
-    // [수정 구역] 마커(⦗ ⦘) 부착 + 알림 팝업 띄우기
-    // =====================================================================
     _w.__loreRegister = function(fn) { 
       injectFn = async function(text) {
         try {
           const injected = await fn(text);
-          // 일반 채팅이거나 조건이 안 맞아서 로어가 안 들어간 경우 조용히 넘어감
           if (!injected || injected === text) return text;
-          
           let loreBlock = injected.replace(text, '').trim();
           if (!loreBlock) return text;
+          
+          // [1.8.4] 불렛 방지 패치: 줄 시작의 "- "를 특수 하이픈 "‐ "으로 교체
+          // 이렇게 하면 사이트 엔진이 불렛 목록을 만들지 않아 지우개가 완벽히 지웁니다.
+          loreBlock = loreBlock.replace(/^- /gm, '‐ '); 
 
-          // 로어가 성공적으로 들어간 경우에만 완료 알림 띄움!
           showLoreToast('✨ 로어 인젝트 완료!', true);
           return text + '\n\n⦗\n' + loreBlock + '\n⦘';
         } catch(e) {
-          // 에러가 났을 때만 실패 알림 띄움
           showLoreToast('🚨 로어 인젝트 오류!', false);
           return text;
         }
@@ -249,7 +225,7 @@
 
   function onRouteChange(cb) {
     let last = location.href;
-    const fire = () => { if (last === location.href) return; last = location.href; updateRoute(); try { cb(); } catch (e) { } };
+    const fire = () => { if (last === location.href) return; last = location.href; updateRoute(); try { cb(); } catch (e) {} };
     const patchHistory = (name) => {
       const orig = history[name];
       if (!orig || orig.__lorePatched) return;
@@ -282,10 +258,7 @@
   }
 
   function hideLoaderBadge() {
-    try {
-      const el = document.getElementById('lore-lite-loader-badge');
-      if (el) el.remove();
-    } catch (_) {}
+    try { const el = document.getElementById('lore-lite-loader-badge'); if (el) el.remove(); } catch (_) {}
   }
 
   async function fetchText(url) {
@@ -299,43 +272,21 @@
     const POLL_MS = 50;
     const SUB_SOFT_WAIT_MS = 7000;
     const gateDeadline = Date.now() + TIMEOUT_MS;
-    
     const requiredCore = ['__interceptorLoaded', '__constLoaded', '__settingsLoaded', '__extractLoaded', '__injectLoaded', '__inject6Loaded'];
     const requiredSubs = ['__subMainLoaded', '__subLoreLoaded', '__subMergeLoaded', '__subSnapshotLoaded', '__subFileLoaded', '__subExtractLoaded', '__subRefinerLoaded', '__subLogLoaded', '__subSessionLoaded', '__subApiLoaded', '__subHelpLoaded'];
     const requiredAll = requiredCore.concat(requiredSubs);
     let settled = false;
-
-    const settle = (payload) => {
-      if (settled) return;
-      settled = true;
-      try { _w.__LoreInjReady.__resolve(payload); } catch (_) {}
-      try { _w.dispatchEvent(new CustomEvent('LoreInj:ready', { detail: payload })); } catch (_) {}
-    };
-
+    const settle = (payload) => { if (settled) return; settled = true; try { _w.__LoreInjReady.__resolve(payload); } catch (_) {} };
     const check = () => {
       const L = _w.__LoreInj;
       updateRoute();
       const missingCore = requiredCore.filter(k => !L[k]);
       const missingSubs = requiredSubs.filter(k => !L[k]);
       if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
-      if (missingCore.length === 0 && missingSubs.length === 0) {
-        L.allReady = true;
-        settle({ ok: true, ver: L.VER || LOADER_VERSION });
-        hideLoaderBadge();
-        return;
-      }
-      if (missingCore.length === 0 && missingSubs.length > 0 && Date.now() - (L.__gateCoreReadyAt || Date.now()) >= SUB_SOFT_WAIT_MS) {
-        L.allReady = true;
-        L.partialReady = true;
-        L.missingSubs = missingSubs;
-        settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true, missingSubs, moduleStatus: L.moduleStatus || {} });
-        hideLoaderBadge();
-        return;
-      }
+      if (missingCore.length === 0 && missingSubs.length === 0) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION }); hideLoaderBadge(); return; }
+      if (missingCore.length === 0 && missingSubs.length > 0 && Date.now() - (L.__gateCoreReadyAt || Date.now()) >= SUB_SOFT_WAIT_MS) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true }); hideLoaderBadge(); return; }
       if (Date.now() < gateDeadline) return setTimeout(check, POLL_MS);
-      const missing = requiredAll.filter(k => !L[k]);
-      settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
-      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
+      settle({ ok: false, reason: 'timeout' }); showLoaderBadge('로어 로드 지연', '#d66');
     };
     check();
   }
@@ -343,96 +294,60 @@
   async function loadHeavyModules() {
     if (L0.__dynamicLoadStarted || L0.__dynamicLoaded) return;
     L0.__dynamicLoadStarted = true;
-    L0.__dynamicLoadStartedAt = Date.now();
     showLoaderBadge('로어 모듈 로드 중');
     try {
-      const codes = await Promise.all(MODULES.map(async (url) => {
-        const code = await fetchText(url);
-        return '\n/* ---- ' + url + ' ---- */\n' + code;
-      }));
-      const bundle = codes.join('\n');
-      eval(bundle);
+      const codes = await Promise.all(MODULES.map(async (url) => { const code = await fetchText(url); return '\n/* ---- ' + url + ' ---- */\n' + code; }));
+      eval(codes.join('\n'));
       L0.__dynamicLoaded = true;
-      L0.__dynamicLoadedAt = Date.now();
       startReadyGate();
-    } catch (e) {
-      L0.__dynamicLoadError = String(e && e.message || e);
-      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
-      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
-    }
+    } catch (e) { showLoaderBadge('로어 로드 실패', '#d66'); }
   }
 
-  if (isChatPath()) { loadHeavyModules(); } 
-  else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
+  if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
 
-  // =====================================================================
-  // 하트 버튼 스타일 및 기능
-  // =====================================================================
-  try {
-    GM_addStyle(`
-      .erie-heart-btn { display: inline-flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; border-radius: 6px !important; background: transparent !important; color: #555 !important; font-size: 16px !important; border: 1px solid #E6E6E6 !important; cursor: pointer !important; transition: background 0.2s !important; margin-right: -8px !important; z-index: 10 !important; box-sizing: border-box !important; }
-      .erie-heart-btn:last-of-type { margin-right: -4px !important; }
-      .erie-heart-btn:hover { background: #f5f5f5 !important; }
-      body[data-theme="dark"] .erie-heart-btn { border-color: #42413D !important; color: #F0EFEB !important; }
-      body[data-theme="dark"] .erie-heart-btn:hover { background: #333 !important; }
-    `);
-  } catch(_) {}
+  function eraseLoreSafely() {
+    if (!document.body || !document.body.textContent.includes('⦗')) return;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    const allTextNodes = [];
+    while (node = walker.nextNode()) { allTextNodes.push(node); }
+    let erasing = false;
+    for (let n of allTextNodes) {
+        let text = n.nodeValue;
+        let parent = n.parentNode;
+        let isInput = false;
+        while(parent) { if (parent.tagName === 'TEXTAREA' || parent.tagName === 'INPUT' || parent.isContentEditable) { isInput = true; break; } parent = parent.parentNode; }
+        if (isInput) continue;
+        if (text.includes('⦗')) {
+            erasing = true;
+            if (text.includes('⦘')) { n.nodeValue = text.replace(/\s*⦗[\s\S]*?⦘/g, ''); erasing = false; continue; }
+            n.nodeValue = text.split('⦗')[0]; continue;
+        }
+        if (erasing) {
+            if (text.includes('⦘')) { n.nodeValue = text.split('⦘')[1] || ""; erasing = false; }
+            else { n.nodeValue = ""; }
+        }
+    }
+  }
 
   function patchChasmButton() {
     const allButtons = document.querySelectorAll('button');
     for (const btn of allButtons) {
-      const rawText = (btn.textContent || '').trim();
-      const rawHTML = (btn.innerHTML || '').trim();
-      const isChasmBtn = rawText.includes('Chasm') || rawHTML.includes('Chasm') || rawText.includes('🔥') || rawHTML.includes('🔥') || btn.dataset.loreToolBtn !== undefined;
-
-      if (!isChasmBtn || btn.dataset.eriePatched === '1') continue;
-
-      btn.dataset.eriePatched = '1';
-      btn.innerHTML = '♡';
-      btn.classList.add('erie-heart-btn');
-
-      const btnObs = new MutationObserver(() => {
-        if ((btn.textContent || '').trim() !== '♡' || (btn.innerHTML || '').trim() !== '♡') { btn.innerHTML = '♡'; }
-      });
-      btnObs.observe(btn, { childList: true, characterData: true, subtree: true });
-      break; 
+      if ((btn.textContent||'').includes('Chasm') || (btn.innerHTML||'').includes('🔥')) {
+        if (btn.dataset.eriePatched === '1') continue;
+        btn.dataset.eriePatched = '1';
+        btn.innerHTML = '♡';
+        btn.style.cssText = "display:inline-flex!important;align-items:center!important;justify-content:center!important;width:36px!important;height:36px!important;border-radius:6px!important;background:transparent!important;color:#555!important;font-size:16px!important;border:1px solid #E6E6E6!important;cursor:pointer!important;transition:background 0.2s!important;margin-right:-8px!important;z-index:10!important;";
+        const obs = new MutationObserver(() => { if (btn.innerHTML !== '♡') btn.innerHTML = '♡'; });
+        obs.observe(btn, { childList: true, characterData: true, subtree: true });
+      }
     }
   }
 
-  // =====================================================================
-  // 사이트를 멈추지 않는 초경량 지우개
-  // =====================================================================
-  function eraseLoreSafely() {
-    if (!document.body || !document.body.textContent.includes('⦗')) return;
-    
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    let node;
-    const nodesToClean = [];
-    
-    while (node = walker.nextNode()) {
-        if (node.nodeValue && node.nodeValue.includes('⦗')) {
-            let parent = node.parentNode;
-            let isInput = false;
-            while(parent) {
-                if (parent.tagName === 'TEXTAREA' || parent.tagName === 'INPUT' || parent.isContentEditable) {
-                    isInput = true; break;
-                }
-                parent = parent.parentNode;
-            }
-            if (!isInput) nodesToClean.push(node);
-        }
-    }
-    
-    nodesToClean.forEach(n => {
-        n.nodeValue = n.nodeValue.replace(/\s*⦗[\s\S]*?⦘/g, '');
-    });
-  }
-
-  // 로딩 완료 후 버튼 적용 & 지우개 자동 실행
   _w.__LoreInjReady.then(() => { 
-      patchChasmButton(); 
-      setInterval(eraseLoreSafely, 1000);
+      setInterval(eraseLoreSafely, 1000); 
       setInterval(patchChasmButton, 2000); 
   });
+  onRouteChange(() => { setTimeout(patchChasmButton, 1000); });
 
 })();
