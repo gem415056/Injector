@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 최종 완료본 (기록 투명화 추가)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.7.4 로직 완전 복구판
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.7
-// @description 모듈화된 로어 인젝터 로더 (하트 유지, 마커 복구, 과거기록 투명화)
+// @version     1.7.8
+// @description 모듈화된 로어 인젝터 로더 (삽입/지우개 1.7.4 원본 복구 + 렉/로딩 해결)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.7';
+  const LOADER_VERSION = '1.7.8';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -83,7 +83,7 @@
 
   if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
-  // [기본] 인터셉터 설치
+  // [기본] 인터셉터
   function installEarlyInterceptor() {
       if (L0.__interceptorLoaded) return;
       const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -160,18 +160,19 @@
   }
   installEarlyInterceptor();
 
-  // [미션 2 해결] 오타(= 누락) 수정. 정상적으로 ⦗ ⦘ 가 삽입되도록 복구
+  // =====================================================================
+  // [1.7.4 완벽 복구] 로어 삽입 및 마커 부착 로직 (절대 건드리지 않음)
+  // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
   _w.__loreRegister = function(fn) {
     _origLoreRegister(async function(userText) {
       try {
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
-        
+
         let loreBlock = injected.replace(userText, '').trim();
         if (!loreBlock) return userText;
-        
-        // 1.7.4 에서 잘 작동했던 포맷 그대로 적용 (설정문구 보존, 줄바꿈 보존)
+
         return userText + '\n\n⦗\n' + loreBlock + '\n⦘';
       } catch (e) {
         return userText;
@@ -179,55 +180,74 @@
     });
   };
 
-  // 로딩 팝업
-  function showLoaderBadge(text, color = '#4a9') {
+  // =====================================================================
+  // [1.7.4 완벽 복구] 스마트 지우개 로직 (절대 건드리지 않음)
+  // =====================================================================
+  function eraseLoreHTML() {
     try {
-      const mount = document.body || document.documentElement;
-      if (!mount) return;
-      let el = document.getElementById('lore-lite-loader-badge');
-      if (!el) {
-        el = document.createElement('div');
-        el.id = 'lore-lite-loader-badge';
-        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
-        mount.appendChild(el);
-      }
-      el.textContent = text;
-      el.style.borderColor = color;
-    } catch (_) {}
-  }
+      const elements = Array.from(document.querySelectorAll('*'))
+        .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
+      
+      if (elements.length === 0) return;
 
-  function hideLoaderBadge() {
-    try {
-      const el = document.getElementById('lore-lite-loader-badge');
-      if (el) el.remove();
-    } catch (_) {}
-  }
+      elements.sort((a, b) => {
+        let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
+        let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
+        return depthB - depthA;
+      });
 
-  // [미션 3 추가] 지우개 핵심 함수
-  function eraseLoreFromNode(targetNode) {
-    if (!targetNode || !targetNode.textContent || !targetNode.textContent.includes('⦗')) return;
-    try {
-        const walker = document.createTreeWalker(targetNode, NodeFilter.SHOW_TEXT, null, false);
-        let node;
-        const nodesToClean = [];
-        while(node = walker.nextNode()) {
-            if (node.nodeValue && node.nodeValue.includes('⦗')) {
-                nodesToClean.push(node);
-            }
+      const processed = new Set();
+      elements.forEach(el => {
+        if (!processed.has(el)) {
+          el.innerHTML = el.innerHTML.replace(/<br>\s*⦗[\s\S]*?⦘/g, '');
+          el.innerHTML = el.innerHTML.replace(/⦗[\s\S]*?⦘/g, '');
+          
+          let parent = el.parentNode;
+          while(parent) { processed.add(parent); parent = parent.parentNode; }
         }
-        nodesToClean.forEach(n => {
-            n.nodeValue = n.nodeValue.replace(/\s*⦗[\s\S]*?⦘/g, '');
-        });
-    } catch(e) {}
+      });
+    } catch (e) {}
   }
 
-  // [미션 3 추가] 채팅방 전체 기록 지우기 함수 (새로고침, 방 이동 시 작동)
-  function cleanFullChatHistory() {
-      const chatContainer = document.querySelector('[class*="MessageList_container"]') || document.body;
-      eraseLoreFromNode(chatContainer);
-  }
+  // =====================================================================
+  // [렉 해결 & 로딩 해결] 작동 타이머 (가장 똑똑하고 가벼운 감지기)
+  // =====================================================================
+  
+  // 1. 화면에 새 글자가 생겼을 때만 감지 (타이핑 렉 0%)
+  const domObserver = new MutationObserver((mutations) => {
+      let hasMarker = false;
+      for (let m of mutations) {
+          // 키보드 입력일 경우 ⦗ 기호가 포함되었는지만 1초 만에 검사하고 통과
+          if (m.type === 'characterData' && m.target.nodeValue && m.target.nodeValue.includes('⦗')) {
+              hasMarker = true; break;
+          }
+          // 새로운 채팅 말풍선이 로드될 경우 ⦗ 기호 검사
+          if (m.type === 'childList') {
+              for (let n of m.addedNodes) {
+                  if (n.nodeType === 1 && n.innerHTML && n.innerHTML.includes('⦗')) {
+                      hasMarker = true; break;
+                  } else if (n.nodeType === 3 && n.nodeValue && n.nodeValue.includes('⦗')) {
+                      hasMarker = true; break;
+                  }
+              }
+          }
+      }
+      // 마커를 발견했을 때만 1.7.4 지우개 작동!
+      if (hasMarker) eraseLoreHTML();
+  });
+  domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 
-  // [미션 1] 하트 버튼 (절대 건드리지 않음. 1.7.6 원본 그대로)
+  // 2. 과거 내역 로딩 해결 (1초마다 조용히 확인)
+  setInterval(() => {
+      if (document.body && document.body.innerHTML.includes('⦗')) {
+          eraseLoreHTML();
+      }
+  }, 1000);
+
+
+  // =====================================================================
+  // [1.7.6 완벽 보존] 하트 버튼 기능
+  // =====================================================================
   try {
     GM_addStyle(`
       .erie-heart-btn { display: inline-flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; border-radius: 6px !important; background: transparent !important; color: #555 !important; font-size: 16px !important; border: 1px solid #E6E6E6 !important; cursor: pointer !important; transition: background 0.2s !important; margin-right: -8px !important; z-index: 10 !important; box-sizing: border-box !important; }
@@ -259,7 +279,32 @@
     }
   }
 
+  // =====================================================================
   // 코어 로더 설정
+  // =====================================================================
+  function showLoaderBadge(text, color = '#4a9') {
+    try {
+      const mount = document.body || document.documentElement;
+      if (!mount) return;
+      let el = document.getElementById('lore-lite-loader-badge');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'lore-lite-loader-badge';
+        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
+        mount.appendChild(el);
+      }
+      el.textContent = text;
+      el.style.borderColor = color;
+    } catch (_) {}
+  }
+
+  function hideLoaderBadge() {
+    try {
+      const el = document.getElementById('lore-lite-loader-badge');
+      if (el) el.remove();
+    } catch (_) {}
+  }
+
   function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
   function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
   function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
@@ -332,38 +377,7 @@
 
   if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
   
-  // [미션 3, 4] 로딩 완료 후, 그리고 페이지 이동 시마다 순차적/안정적으로 실행
-  _w.__LoreInjReady.then(() => {
-    setTimeout(patchChasmButton, 1000); 
-    
-    // 새 채팅 감시자
-    const chatObserver = new MutationObserver((mutationsList) => {
-        for (const mutation of mutationsList) {
-            if (mutation.type === 'childList') {
-                mutation.addedNodes.forEach(node => eraseLoreFromNode(node));
-            }
-        }
-    });
-    
-    const startObserving = () => {
-        const chatContainer = document.querySelector('[class*="MessageList_container"]');
-        if (chatContainer) {
-            cleanFullChatHistory(); // 방 입장 시 기존 로그 즉시 스캔 및 삭제!
-            chatObserver.observe(chatContainer, { childList: true, subtree: true });
-        } else {
-            setTimeout(startObserving, 500); 
-        }
-    };
-    startObserving();
-  });
-
-  // 다른 방으로 이동했을 때 작동 (하트 버튼 유지, 과거 로그 즉시 지우기)
-  onRouteChange(() => { 
-      if(isChatPath()) {
-          setTimeout(patchChasmButton, 1000); 
-          setTimeout(cleanFullChatHistory, 500); // 방 이동 후 0.5초 뒤 스캔
-          setTimeout(cleanFullChatHistory, 1500); // 늦게 뜨는 걸 대비해 1.5초 뒤 한번 더 스캔
-      }
-  });
+  _w.__LoreInjReady.then(() => { setTimeout(patchChasmButton, 1000); });
+  onRouteChange(() => { if(isChatPath()) setTimeout(patchChasmButton, 1000); });
 
 })();
