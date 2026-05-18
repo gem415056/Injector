@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.3
-// @description 모듈화된 로어 인젝터 로더 (로어 숨김 & 버튼 수정 최종 패치)
-// @author      로컬AI (수정 by Assistant)
+// @version     1.7.0
+// @description 모듈화된 로어 인젝터 로더
+// @author      로컬AI
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
 // @downloadURL https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.4.0-test.65';
+  const LOADER_VERSION = '1.7.0';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -101,34 +101,7 @@
     p.__resolve = _resolve;
     _w.__LoreInjReady = p;
   }
-  
-  // --- [수정된 부분 1: 로어 숨김 처리 로직] ---
-  // 줄바꿈 문제를 '보이지 않는 특수 공백'으로 해결한 최종 로직
-  async function processHiddenLore(orig, mod) {
-    try {
-        if (orig === mod) return mod;
 
-        const loreOnly = mod.replace(orig, '').trim();
-        if (!loreOnly) return orig; 
-        
-        const oneLineLore = loreOnly.replace(/\n/g, ' ').replace(/"/g, "'");
-        const systemMessage = '[System: Established world/character facts for this scene. Do not repeat verbatim.] ';
-        const commentContent = systemMessage + oneLineLore;
-
-        // 핵심 해결책: 줄바꿈(\n) 뒤에 보이지 않는 특수 공백(Zero-Width Space, \u200B)을 추가하여
-        // 웹사이트가 줄바꿈을 임의로 제거하거나 잘못 해석하는 것을 방지합니다.
-        const invisibleGuard = '\u200B';
-        const hiddenLore = `\n${invisibleGuard}[//]: # "${commentContent}"`;
-
-        return orig + hiddenLore;
-
-    } catch (e) {
-      console.error('[Lore] 로어 숨김 처리 중 오류 발생:', e);
-      return mod;
-    }
-  }
-  // --- [수정 완료] ---
-  
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -156,8 +129,12 @@
               const orig = arr[1].message;
               (async () => {
                 const mod = await injectText(orig);
-                arr[1].message = await processHiddenLore(orig, mod);
-                origWsSend.call(ws, prefix + JSON.stringify(arr));
+                if (orig !== mod) {
+                  arr[1].message = mod;
+                  origWsSend.call(ws, prefix + JSON.stringify(arr));
+                } else {
+                  origWsSend.call(ws, data);
+                }
               })();
               return;
             }
@@ -182,43 +159,36 @@
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
                 let injected = false;
-                
-                const applyLoreHiding = async (obj, key) => {
-                    if (typeof obj[key] === 'string') {
-                        const orig = obj[key];
-                        const mod = await injectText(orig);
-                        if (orig !== mod) {
-                            obj[key] = await processHiddenLore(orig, mod);
-                            injected = true;
-                        }
-                    }
-                };
-                
                 if (Array.isArray(body.messages)) {
                   for (let i = body.messages.length - 1; i >= 0; i--) {
-                    if (body.messages[i].role === 'user') {
-                      await applyLoreHiding(body.messages[i], 'content');
-                      break; 
+                    if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
+                      const orig = body.messages[i].content;
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { body.messages[i].content = mod; injected = true; }
+                      break;
                     }
                   }
                 }
-                
                 if (!injected) {
-                    const keys = ['content', 'message', 'text', 'prompt', 'query'];
-                    for (const key of keys) {
-                        await applyLoreHiding(body, key);
-                        if (injected) break;
+                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                    if (typeof body[key] === 'string') {
+                      const orig = body[key];
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { body[key] = mod; injected = true; }
+                      break;
                     }
+                  }
                 }
-
                 if (!injected && body.variables && typeof body.variables === 'object') {
-                    const keys = ['content', 'message', 'text', 'prompt', 'query'];
-                    for (const key of keys) {
-                        await applyLoreHiding(body.variables, key);
-                        if (injected) break;
+                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                    if (typeof body.variables[key] === 'string') {
+                      const orig = body.variables[key];
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { body.variables[key] = mod; injected = true; }
+                      break;
                     }
+                  }
                 }
-
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
@@ -241,6 +211,136 @@
   }
 
   installEarlyInterceptor();
+
+  // =====================================================================
+  // [v1.7.0] 로어 포맷 오버라이드
+  // 원본 inject 함수를 가로채서 출력 형식을 재구성:
+  //   유저입력\n[//]: # "[System: ...] 로어내용(줄바꿈 제거)"
+  // 유저 텍스트가 앞에 오므로 서버 측 검증을 통과하며,
+  // \n이 중간에 위치해 [//]: # 주석이 독립 줄에 렌더링되어 투명처리됨.
+  // =====================================================================
+  const LORE_SYSTEM_PREFIX = '[System: Established world/character facts for this scene. Do not repeat verbatim.]';
+  const _origLoreRegister = _w.__loreRegister;
+  _w.__loreRegister = function(fn) {
+    _origLoreRegister(async function(userText) {
+      try {
+        const injected = await fn(userText);
+        if (!injected || injected === userText) return userText;
+
+        // 주입된 결과에서 로어 블록 추출
+        let loreBlock = '';
+        if (typeof injected === 'string') {
+          if (injected.endsWith(userText)) {
+            // 로어가 앞에 붙은 경우 (prepend)
+            loreBlock = injected.slice(0, injected.length - userText.length);
+          } else if (injected.startsWith(userText)) {
+            // 로어가 뒤에 붙은 경우 (append)
+            loreBlock = injected.slice(userText.length);
+          } else {
+            // 기타: 유저 텍스트를 제거한 나머지를 사용
+            loreBlock = injected.split(userText).join('');
+          }
+        }
+
+        // 로어 내 줄바꿈 완전 제거 (투명주석은 단일 줄이어야 함)
+        loreBlock = loreBlock
+          .replace(/[\n\r]+/g, ' ')
+          .replace(/\s{3,}/g, '  ')
+          .trim();
+
+        if (!loreBlock) return userText;
+
+        // 최종 포맷: 유저텍스트 + \n + 투명주석(로어)
+        return userText + '\n[//]: # "' + LORE_SYSTEM_PREFIX + ' ' + loreBlock + '"';
+      } catch (e) {
+        console.error('[LoreInj v1.7.0] 로어 포맷 오류, 원본 반환:', e);
+        return userText;
+      }
+    });
+  };
+
+  // =====================================================================
+  // [v1.7.0] 버튼 스타일 CSS — 3in1 스크립트와 동일한 간격/크기
+  // =====================================================================
+  try {
+    GM_addStyle(`
+      .erie-heart-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 36px !important;
+        height: 36px !important;
+        border-radius: 6px !important;
+        background: transparent !important;
+        color: #555 !important;
+        font-size: 16px !important;
+        border: 1px solid #E6E6E6 !important;
+        cursor: pointer !important;
+        transition: background 0.2s !important;
+        margin-right: -8px !important;
+        z-index: 10 !important;
+        box-sizing: border-box !important;
+      }
+      .erie-heart-btn:last-of-type {
+        margin-right: -4px !important;
+      }
+      .erie-heart-btn:hover {
+        background: #f5f5f5 !important;
+      }
+      body[data-theme="dark"] .erie-heart-btn {
+        border-color: #42413D !important;
+        color: #F0EFEB !important;
+      }
+      body[data-theme="dark"] .erie-heart-btn:hover {
+        background: #333 !important;
+      }
+    `);
+  } catch(_) {}
+
+  // =====================================================================
+  // [v1.7.0] 버튼 교체 함수
+  // '🔥Chasm Tools' 버튼을 찾아 '♡' 로 교체하고
+  // MutationObserver로 원래대로 돌아가는 것을 강력히 차단
+  // =====================================================================
+  function patchChasmButton() {
+    const allButtons = document.querySelectorAll('button');
+    for (const btn of allButtons) {
+      const rawText = (btn.textContent || '').trim();
+      const rawHTML = (btn.innerHTML || '').trim();
+      const isChasmBtn = rawText.includes('Chasm') || rawHTML.includes('Chasm') ||
+                         rawText.includes('🔥') || rawHTML.includes('🔥') ||
+                         btn.dataset.loreToolBtn !== undefined;
+
+      if (!isChasmBtn) continue;
+      if (btn.dataset.eriePatched === '1') continue;
+
+      btn.dataset.eriePatched = '1';
+      btn.innerHTML = '♡';
+      btn.classList.add('erie-heart-btn');
+
+      // 이 버튼 개별 감시: innerHTML이 바뀌면 즉시 복원
+      const btnObs = new MutationObserver(() => {
+        if ((btn.textContent || '').trim() !== '♡' || (btn.innerHTML || '').trim() !== '♡') {
+          btn.innerHTML = '♡';
+        }
+      });
+      btnObs.observe(btn, { childList: true, characterData: true, subtree: true });
+
+      console.log('[LoreInj v1.7.0] Chasm 버튼 → ♡ 교체 완료');
+      break;
+    }
+  }
+
+  // 모듈 로드 완료 후 버튼 패치 시작
+  _w.__LoreInjReady.then(() => {
+    patchChasmButton();
+    // 전역 DOM 감시: 버튼이 나중에 생성되거나 교체될 때도 대응
+    const globalObs = new MutationObserver(() => {
+      patchChasmButton();
+    });
+    const root = document.body || document.documentElement;
+    if (root) globalObs.observe(root, { childList: true, subtree: true });
+  });
 
   function isChatPath(path = location.pathname) {
     return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
@@ -409,71 +509,4 @@
       if (isChatPath()) loadHeavyModules();
     });
   }
-
-  // --- [수정된 부분 2: 버튼 디자인 덮어쓰기] ---
-  // 안정성이 검증된 이전 로직을 그대로 사용합니다.
-  (function tweakChasmButton() {
-    if (typeof document === 'undefined') return;
-    
-    const s = document.createElement('style');
-    s.id = 'chasm-btn-tweak-css';
-    s.textContent = `
-        .crack-uni-btn-chasm { 
-            display: inline-flex !important; align-items: center !important; justify-content: center !important; 
-            width: 36px !important; height: 36px !important; border-radius: 6px !important; 
-            background: transparent !important; 
-            color: #555 !important; 
-            font-size: 16px !important; 
-            border: 1px solid #E6E6E6 !important; 
-            cursor: pointer !important; transition: 0.2s !important; 
-            margin-right: -4px !important;
-            z-index: 10 !important; 
-            padding: 0 !important;
-            box-shadow: none !important;
-            min-width: unset !important;
-        }
-        .crack-uni-btn-chasm:hover { background: #f5f5f5 !important; }
-        
-        body[data-theme="dark"] .crack-uni-btn-chasm {
-            border-color: #42413D !important;
-            color: #F0EFEB !important;
-        }
-        body[data-theme="dark"] .crack-uni-btn-chasm:hover {
-            background: #333 !important;
-        }
-    `;
-    
-    function injectCSS() {
-        if (!document.getElementById('chasm-btn-tweak-css') && document.head) {
-            document.head.appendChild(s);
-        }
-    }
-
-    const obs = new MutationObserver(() => {
-        injectCSS();
-        const btns = document.querySelectorAll('button');
-        for (const btn of btns) {
-            if (btn.textContent.includes('🔥') && btn.textContent.toLowerCase().includes('chasm tools')) {
-                btn.textContent = '♡';
-                btn.classList.add('crack-uni-btn-chasm');
-                btn.style.cssText = ''; // 인라인 스타일을 모두 제거하여 CSS가 적용되도록 함
-            }
-        }
-    });
-    
-    const startObserver = () => {
-        if (document.body) {
-            obs.observe(document.body, { childList: true, subtree: true, characterData: true });
-            injectCSS();
-        }
-    };
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', startObserver);
-    } else {
-        startObserver();
-    }
-  })();
-  // --- [수정 완료] ---
-
 })();
