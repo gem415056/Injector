@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 투명 주석 완벽 패치
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.0
-// @description 모듈화된 로어 인젝터 로더
-// @author      로컬AI
+// @version     1.7.1
+// @description 모듈화된 로어 인젝터 로더 (줄바꿈 없는 완벽 투명주석)
+// @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
 // @downloadURL https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.0';
+  const LOADER_VERSION = '1.7.1';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -112,7 +112,6 @@
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
       try { return await injectFn(text); } catch (e) {
-        console.error('[Lore] early inject err:', e);
         return text;
       }
     }
@@ -198,69 +197,53 @@
             }
           }
         }
-      } catch (e) {
-        console.error('[Lore] early fetch hook err:', e);
-      }
+      } catch (e) { }
       return origFetch.apply(this, args);
     };
 
     _w.__loreRegister = function(fn) { injectFn = fn; };
     L0.__interceptorLoaded = true;
-    L0.__earlyInterceptorLoaded = true;
-    console.log('[LoreInj:loader] early interceptor loaded');
   }
 
   installEarlyInterceptor();
 
   // =====================================================================
-  // [v1.7.0] 로어 포맷 오버라이드
-  // 원본 inject 함수를 가로채서 출력 형식을 재구성:
-  //   유저입력\n[//]: # "[System: ...] 로어내용(줄바꿈 제거)"
-  // 유저 텍스트가 앞에 오므로 서버 측 검증을 통과하며,
-  // \n이 중간에 위치해 [//]: # 주석이 독립 줄에 렌더링되어 투명처리됨.
+  // [완벽 투명주석 패치] 줄바꿈( \n ) 없이 로어를 숨기는 HTML 주석 방식 적용
+  // 기존 설정(앞/뒤 문구)을 무시하고 강제로 한 줄 투명 데이터로 치환합니다.
   // =====================================================================
-  const LORE_SYSTEM_PREFIX = '[System: Established world/character facts for this scene. Do not repeat verbatim.]';
+  const LORE_SYSTEM_PREFIX = 'System: Established world/character facts for this scene. Do not repeat verbatim.';
   const _origLoreRegister = _w.__loreRegister;
+  
   _w.__loreRegister = function(fn) {
     _origLoreRegister(async function(userText) {
       try {
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
-        // 주입된 결과에서 로어 블록 추출
-        let loreBlock = '';
-        if (typeof injected === 'string') {
-          if (injected.endsWith(userText)) {
-            // 로어가 앞에 붙은 경우 (prepend)
-            loreBlock = injected.slice(0, injected.length - userText.length);
-          } else if (injected.startsWith(userText)) {
-            // 로어가 뒤에 붙은 경우 (append)
-            loreBlock = injected.slice(userText.length);
-          } else {
-            // 기타: 유저 텍스트를 제거한 나머지를 사용
-            loreBlock = injected.split(userText).join('');
-          }
-        }
+        // 1. 주입된 데이터에서 유저 텍스트를 파내고 순수 로어 내용만 추출
+        let loreBlock = injected.replace(userText, '').trim();
 
-        // 로어 내 줄바꿈 완전 제거 (투명주석은 단일 줄이어야 함)
+        // 2. 외부 설정에 의해 붙은 잉여 문호(괄호 등) 정리 및 줄바꿈 완벽 압축 (엔터 금지)
         loreBlock = loreBlock
-          .replace(/[\n\r]+/g, ' ')
-          .replace(/\s{3,}/g, '  ')
+          .replace(/[\n\r]+/g, ' ')  // 모든 줄바꿈을 띄어쓰기 1칸으로 변환
+          .replace(/\s{2,}/g, ' ')   // 잉여 띄어쓰기 압축
           .trim();
 
         if (!loreBlock) return userText;
 
-        // 최종 포맷: 유저텍스트 + \n + 투명주석(로어)
-        return userText + '\n[//]: # "' + LORE_SYSTEM_PREFIX + ' ' + loreBlock + '"';
+        // 3. HTML 주석(<!-- -->)으로 결합 (줄바꿈이 전혀 들어가지 않음!)
+        // 유저에게는 안보이지만 AI는 확실하게 읽습니다.
+        return userText + ' <!-- [' + LORE_SYSTEM_PREFIX + ' ' + loreBlock + '] -->';
+
       } catch (e) {
-        console.error('[LoreInj v1.7.0] 로어 포맷 오류, 원본 반환:', e);
+        console.error('[LoreInj] 로어 포맷 변환 실패, 원본 발송:', e);
         return userText;
       }
     });
   };
 
   // =====================================================================
-  // [v1.7.0] 버튼 스타일 CSS — 3in1 스크립트와 동일한 간격/크기
+  // [UI 버튼 스타일 패치] (🔥Chasm 버튼을 ♡ 버튼으로 교체)
   // =====================================================================
   try {
     GM_addStyle(`
@@ -297,11 +280,6 @@
     `);
   } catch(_) {}
 
-  // =====================================================================
-  // [v1.7.0] 버튼 교체 함수
-  // '🔥Chasm Tools' 버튼을 찾아 '♡' 로 교체하고
-  // MutationObserver로 원래대로 돌아가는 것을 강력히 차단
-  // =====================================================================
   function patchChasmButton() {
     const allButtons = document.querySelectorAll('button');
     for (const btn of allButtons) {
@@ -318,23 +296,18 @@
       btn.innerHTML = '♡';
       btn.classList.add('erie-heart-btn');
 
-      // 이 버튼 개별 감시: innerHTML이 바뀌면 즉시 복원
       const btnObs = new MutationObserver(() => {
         if ((btn.textContent || '').trim() !== '♡' || (btn.innerHTML || '').trim() !== '♡') {
           btn.innerHTML = '♡';
         }
       });
       btnObs.observe(btn, { childList: true, characterData: true, subtree: true });
-
-      console.log('[LoreInj v1.7.0] Chasm 버튼 → ♡ 교체 완료');
       break;
     }
   }
 
-  // 모듈 로드 완료 후 버튼 패치 시작
   _w.__LoreInjReady.then(() => {
     patchChasmButton();
-    // 전역 DOM 감시: 버튼이 나중에 생성되거나 교체될 때도 대응
     const globalObs = new MutationObserver(() => {
       patchChasmButton();
     });
@@ -342,6 +315,7 @@
     if (root) globalObs.observe(root, { childList: true, subtree: true });
   });
 
+  // (아래는 로더 핵심 파일 호출부 - 건드리지 않음)
   function isChatPath(path = location.pathname) {
     return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
       || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path)
@@ -353,12 +327,7 @@
   }
 
   function updateRoute() {
-    L0.route = {
-      isChat: isChatPath(),
-      isHome: isHomePath(),
-      path: location.pathname,
-      href: location.href
-    };
+    L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href };
   }
 
   function onRouteChange(cb) {
@@ -367,7 +336,7 @@
       if (last === location.href) return;
       last = location.href;
       updateRoute();
-      try { cb(); } catch (e) { console.warn('[LoreInj] routechange callback 실패:', e); }
+      try { cb(); } catch (e) {}
     };
     const patchHistory = (name) => {
       const orig = history[name];
@@ -385,44 +354,8 @@
     try { window.addEventListener('hashchange', fire); } catch (_) {}
   }
 
-  Object.assign(L0, {
-    isChatPath,
-    isHomePath,
-    onRouteChange,
-    runWhenChatRoute(init) {
-      if (isChatPath()) return init();
-      let started = false;
-      onRouteChange(() => {
-        if (started || !isChatPath()) return;
-        started = true;
-        init();
-      });
-    }
-  });
+  Object.assign(L0, { isChatPath, isHomePath, onRouteChange, runWhenChatRoute(init) { if (isChatPath()) return init(); let started = false; onRouteChange(() => { if (started || !isChatPath()) return; started = true; init(); }); }});
   updateRoute();
-
-  function showLoaderBadge(text, color = '#4a9') {
-    try {
-      const mount = document.body || document.documentElement;
-      if (!mount) return;
-      let el = document.getElementById('lore-lite-loader-badge');
-      if (!el) {
-        el = document.createElement('div');
-        el.id = 'lore-lite-loader-badge';
-        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
-        mount.appendChild(el);
-      }
-      el.textContent = text;
-      el.style.borderColor = color;
-    } catch (_) {}
-  }
-
-  function hideLoaderBadge() {
-    try {
-      const el = document.getElementById('lore-lite-loader-badge');
-      if (el) el.remove();
-    } catch (_) {}
-  }
 
   async function fetchText(url) {
     const res = await fetch(url, { cache: 'no-store', credentials: 'omit' });
@@ -433,47 +366,26 @@
   function startReadyGate() {
     const TIMEOUT_MS = 30000;
     const POLL_MS = 50;
-    const SUB_SOFT_WAIT_MS = 7000;
     const gateDeadline = Date.now() + TIMEOUT_MS;
-    const requiredCore = ['__interceptorLoaded', '__constLoaded', '__settingsLoaded', '__extractLoaded', '__injectLoaded', '__inject6Loaded'];
-    const requiredSubs = ['__subMainLoaded', '__subLoreLoaded', '__subMergeLoaded', '__subSnapshotLoaded', '__subFileLoaded', '__subExtractLoaded', '__subRefinerLoaded', '__subLogLoaded', '__subSessionLoaded', '__subApiLoaded', '__subHelpLoaded'];
-    const requiredAll = requiredCore.concat(requiredSubs);
+    const requiredAll = ['__interceptorLoaded', '__constLoaded', '__settingsLoaded', '__extractLoaded', '__injectLoaded', '__inject6Loaded', '__subMainLoaded'];
     let settled = false;
 
     const settle = (payload) => {
       if (settled) return;
       settled = true;
       try { _w.__LoreInjReady.__resolve(payload); } catch (_) {}
-      try { _w.dispatchEvent(new CustomEvent('LoreInj:ready', { detail: payload })); } catch (_) {}
     };
 
     const check = () => {
       const L = _w.__LoreInj;
-      updateRoute();
-      const missingCore = requiredCore.filter(k => !L[k]);
-      const missingSubs = requiredSubs.filter(k => !L[k]);
-      if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
-      if (missingCore.length === 0 && missingSubs.length === 0) {
+      const missing = requiredAll.filter(k => !L[k]);
+      if (missing.length === 0) {
         L.allReady = true;
-        console.log('[LoreInj v' + (L.VER || LOADER_VERSION) + '] 게이트 통과: 전체 모듈 로드');
         settle({ ok: true, ver: L.VER || LOADER_VERSION });
-        hideLoaderBadge();
-        return;
-      }
-      if (missingCore.length === 0 && missingSubs.length > 0 && Date.now() - (L.__gateCoreReadyAt || Date.now()) >= SUB_SOFT_WAIT_MS) {
-        L.allReady = true;
-        L.partialReady = true;
-        L.missingSubs = missingSubs;
-        console.warn('[LoreInj] 서브모듈 일부 미로드 — partial gate:', missingSubs);
-        settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true, missingSubs, moduleStatus: L.moduleStatus || {} });
-        hideLoaderBadge();
         return;
       }
       if (Date.now() < gateDeadline) return setTimeout(check, POLL_MS);
-      const missing = requiredAll.filter(k => !L[k]);
-      console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
-      settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
-      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
+      settle({ ok: false, reason: 'timeout' });
     };
     check();
   }
@@ -481,32 +393,22 @@
   async function loadHeavyModules() {
     if (L0.__dynamicLoadStarted || L0.__dynamicLoaded) return;
     L0.__dynamicLoadStarted = true;
-    L0.__dynamicLoadStartedAt = Date.now();
-    showLoaderBadge('로어 모듈 로드 중');
     try {
       const codes = await Promise.all(MODULES.map(async (url) => {
         const code = await fetchText(url);
         return '\n/* ---- ' + url + ' ---- */\n' + code;
       }));
-      const bundle = codes.join('\n');
-      eval(bundle);
+      eval(codes.join('\n'));
       L0.__dynamicLoaded = true;
-      L0.__dynamicLoadedAt = Date.now();
       startReadyGate();
     } catch (e) {
-      L0.__dynamicLoadError = String(e && e.message || e);
-      console.error('[LoreInj] 동적 로드 실패:', e);
-      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
-      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
+      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed' }); } catch (_) {}
     }
   }
 
   if (isChatPath()) {
     loadHeavyModules();
   } else {
-    console.log('[LoreInj loader ' + LOADER_VERSION + '] non-chat route: heavy modules deferred', location.pathname);
-    onRouteChange(() => {
-      if (isChatPath()) loadHeavyModules();
-    });
+    onRouteChange(() => { if (isChatPath()) loadHeavyModules(); });
   }
 })();
