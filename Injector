@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 투명 주석 완벽 패치
+// @name        에리의 크랙 로어 인젝터 (Loader) - 빈 링크 투명화 패치
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.1
-// @description 모듈화된 로어 인젝터 로더 (줄바꿈 없는 완벽 투명주석)
+// @version     1.7.2
+// @description 모듈화된 로어 인젝터 로더 (줄바꿈 없는 완벽 투명링크 방식)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.1';
+  const LOADER_VERSION = '1.7.2';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -72,35 +72,16 @@
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
   L0.moduleStatus = L0.moduleStatus || {};
-  L0.markLoaded = L0.markLoaded || function(name, meta) {
-    L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) };
-    L0['__' + name + 'Loaded'] = true;
-  };
-  L0.markFailed = L0.markFailed || function(name, error, meta) {
-    L0.moduleStatus[name] = {
-      ok: false,
-      time: Date.now(),
-      error: String(error && error.message || error || 'unknown'),
-      ...(meta || {})
-    };
-    L0['__' + name + 'Failed'] = true;
-  };
+  L0.markLoaded = L0.markLoaded || function(name, meta) { L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) }; L0['__' + name + 'Loaded'] = true; };
+  L0.markFailed = L0.markFailed || function(name, error, meta) { L0.moduleStatus[name] = { ok: false, time: Date.now(), error: String(error && error.message || error || 'unknown'), ...(meta || {}) }; L0['__' + name + 'Failed'] = true; };
 
   if (!L0.__menuQueue) {
-    const _mq = [];
-    const _smq = [];
-    L0.__menuQueue = _mq;
-    L0.__subMenuQueue = _smq;
-    L0.registerMenu = function(key, cb) { _mq.push({ key, cb }); };
-    L0.registerSubMenu = function(key, cb) { _smq.push({ key, cb }); };
+    L0.__menuQueue = []; L0.__subMenuQueue = [];
+    L0.registerMenu = function(key, cb) { L0.__menuQueue.push({ key, cb }); };
+    L0.registerSubMenu = function(key, cb) { L0.__subMenuQueue.push({ key, cb }); };
   }
 
-  if (!_w.__LoreInjReady) {
-    let _resolve;
-    const p = new Promise(r => { _resolve = r; });
-    p.__resolve = _resolve;
-    _w.__LoreInjReady = p;
-  }
+  if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
@@ -111,9 +92,7 @@
 
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
-      try { return await injectFn(text); } catch (e) {
-        return text;
-      }
+      try { return await injectFn(text); } catch (e) { return text; }
     }
 
     _w.WebSocket.prototype.send = function(data) {
@@ -128,12 +107,7 @@
               const orig = arr[1].message;
               (async () => {
                 const mod = await injectText(orig);
-                if (orig !== mod) {
-                  arr[1].message = mod;
-                  origWsSend.call(ws, prefix + JSON.stringify(arr));
-                } else {
-                  origWsSend.call(ws, data);
-                }
+                if (orig !== mod) { arr[1].message = mod; origWsSend.call(ws, prefix + JSON.stringify(arr)); } else { origWsSend.call(ws, data); }
               })();
               return;
             }
@@ -147,8 +121,7 @@
       try {
         if (injectFn) {
           let reqUrl = '', isReq = false;
-          if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; }
-          else reqUrl = String(args[0] || '');
+          if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; } else reqUrl = String(args[0] || '');
           const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
           if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
             let bodyText = null;
@@ -178,16 +151,6 @@
                     }
                   }
                 }
-                if (!injected && body.variables && typeof body.variables === 'object') {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body.variables[key] === 'string') {
-                      const orig = body.variables[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body.variables[key] = mod; injected = true; }
-                      break;
-                    }
-                  }
-                }
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
@@ -208,8 +171,7 @@
   installEarlyInterceptor();
 
   // =====================================================================
-  // [완벽 투명주석 패치] 줄바꿈( \n ) 없이 로어를 숨기는 HTML 주석 방식 적용
-  // 기존 설정(앞/뒤 문구)을 무시하고 강제로 한 줄 투명 데이터로 치환합니다.
+  // [1.7.2 패치] 줄바꿈(\n)과 HTML 없이 순수 마크다운 "빈 링크" 기법으로 투명화
   // =====================================================================
   const LORE_SYSTEM_PREFIX = 'System: Established world/character facts for this scene. Do not repeat verbatim.';
   const _origLoreRegister = _w.__loreRegister;
@@ -220,20 +182,22 @@
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
-        // 1. 주입된 데이터에서 유저 텍스트를 파내고 순수 로어 내용만 추출
+        // 1. 유저 텍스트와 분리하여 순수 로어만 추출 (1.45 작동 방식 그대로 유지)
         let loreBlock = injected.replace(userText, '').trim();
 
-        // 2. 외부 설정에 의해 붙은 잉여 문호(괄호 등) 정리 및 줄바꿈 완벽 압축 (엔터 금지)
+        // 2. 줄바꿈을 철저히 제거하고, 로어 안의 큰따옴표(")를 작은따옴표(')로 바꿈
+        // (큰따옴표가 있으면 마크다운 문법이 깨질 수 있으므로 방지)
         loreBlock = loreBlock
-          .replace(/[\n\r]+/g, ' ')  // 모든 줄바꿈을 띄어쓰기 1칸으로 변환
-          .replace(/\s{2,}/g, ' ')   // 잉여 띄어쓰기 압축
+          .replace(/[\n\r]+/g, ' ')
+          .replace(/"/g, "'")
+          .replace(/\s{2,}/g, ' ')
           .trim();
 
         if (!loreBlock) return userText;
 
-        // 3. HTML 주석(<!-- -->)으로 결합 (줄바꿈이 전혀 들어가지 않음!)
-        // 유저에게는 안보이지만 AI는 확실하게 읽습니다.
-        return userText + ' <!-- [' + LORE_SYSTEM_PREFIX + ' ' + loreBlock + '] -->';
+        // 3. 줄바꿈 없이 바로 빈 링크 문법으로 이어 붙임: 유저텍스트 [](# "로어내용")
+        // 마크다운 상 내용은 존재하지만 화면 렌더링시 크기가 0이 되어 보이지 않음
+        return userText + ' [](# "' + LORE_SYSTEM_PREFIX + ' ' + loreBlock + '")';
 
       } catch (e) {
         console.error('[LoreInj] 로어 포맷 변환 실패, 원본 발송:', e);
@@ -243,7 +207,7 @@
   };
 
   // =====================================================================
-  // [UI 버튼 스타일 패치] (🔥Chasm 버튼을 ♡ 버튼으로 교체)
+  // [UI 패치] 버튼 변경 기능
   // =====================================================================
   try {
     GM_addStyle(`
@@ -264,19 +228,10 @@
         z-index: 10 !important;
         box-sizing: border-box !important;
       }
-      .erie-heart-btn:last-of-type {
-        margin-right: -4px !important;
-      }
-      .erie-heart-btn:hover {
-        background: #f5f5f5 !important;
-      }
-      body[data-theme="dark"] .erie-heart-btn {
-        border-color: #42413D !important;
-        color: #F0EFEB !important;
-      }
-      body[data-theme="dark"] .erie-heart-btn:hover {
-        background: #333 !important;
-      }
+      .erie-heart-btn:last-of-type { margin-right: -4px !important; }
+      .erie-heart-btn:hover { background: #f5f5f5 !important; }
+      body[data-theme="dark"] .erie-heart-btn { border-color: #42413D !important; color: #F0EFEB !important; }
+      body[data-theme="dark"] .erie-heart-btn:hover { background: #333 !important; }
     `);
   } catch(_) {}
 
@@ -285,10 +240,7 @@
     for (const btn of allButtons) {
       const rawText = (btn.textContent || '').trim();
       const rawHTML = (btn.innerHTML || '').trim();
-      const isChasmBtn = rawText.includes('Chasm') || rawHTML.includes('Chasm') ||
-                         rawText.includes('🔥') || rawHTML.includes('🔥') ||
-                         btn.dataset.loreToolBtn !== undefined;
-
+      const isChasmBtn = rawText.includes('Chasm') || rawHTML.includes('Chasm') || rawText.includes('🔥') || rawHTML.includes('🔥') || btn.dataset.loreToolBtn !== undefined;
       if (!isChasmBtn) continue;
       if (btn.dataset.eriePatched === '1') continue;
 
@@ -297,9 +249,7 @@
       btn.classList.add('erie-heart-btn');
 
       const btnObs = new MutationObserver(() => {
-        if ((btn.textContent || '').trim() !== '♡' || (btn.innerHTML || '').trim() !== '♡') {
-          btn.innerHTML = '♡';
-        }
+        if ((btn.textContent || '').trim() !== '♡' || (btn.innerHTML || '').trim() !== '♡') { btn.innerHTML = '♡'; }
       });
       btnObs.observe(btn, { childList: true, characterData: true, subtree: true });
       break;
@@ -308,44 +258,22 @@
 
   _w.__LoreInjReady.then(() => {
     patchChasmButton();
-    const globalObs = new MutationObserver(() => {
-      patchChasmButton();
-    });
+    const globalObs = new MutationObserver(() => { patchChasmButton(); });
     const root = document.body || document.documentElement;
     if (root) globalObs.observe(root, { childList: true, subtree: true });
   });
 
-  // (아래는 로더 핵심 파일 호출부 - 건드리지 않음)
-  function isChatPath(path = location.pathname) {
-    return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
-      || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path)
-      || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path);
-  }
-
-  function isHomePath(path = location.pathname) {
-    return path === '/' || path === '';
-  }
-
-  function updateRoute() {
-    L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href };
-  }
+  function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
+  function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
+  function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
 
   function onRouteChange(cb) {
     let last = location.href;
-    const fire = () => {
-      if (last === location.href) return;
-      last = location.href;
-      updateRoute();
-      try { cb(); } catch (e) {}
-    };
+    const fire = () => { if (last === location.href) return; last = location.href; updateRoute(); try { cb(); } catch (e) {} };
     const patchHistory = (name) => {
       const orig = history[name];
       if (!orig || orig.__lorePatched) return;
-      history[name] = function() {
-        const ret = orig.apply(this, arguments);
-        setTimeout(fire, 0);
-        return ret;
-      };
+      history[name] = function() { const ret = orig.apply(this, arguments); setTimeout(fire, 0); return ret; };
       history[name].__lorePatched = true;
     };
     try { patchHistory('pushState'); patchHistory('replaceState'); } catch (_) {}
@@ -379,11 +307,7 @@
     const check = () => {
       const L = _w.__LoreInj;
       const missing = requiredAll.filter(k => !L[k]);
-      if (missing.length === 0) {
-        L.allReady = true;
-        settle({ ok: true, ver: L.VER || LOADER_VERSION });
-        return;
-      }
+      if (missing.length === 0) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION }); return; }
       if (Date.now() < gateDeadline) return setTimeout(check, POLL_MS);
       settle({ ok: false, reason: 'timeout' });
     };
@@ -406,9 +330,5 @@
     }
   }
 
-  if (isChatPath()) {
-    loadHeavyModules();
-  } else {
-    onRouteChange(() => { if (isChatPath()) loadHeavyModules(); });
-  }
+  if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
 })();
