@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.4 (불렛 방지 패치)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.5 (끈질긴 하이재킹 패치)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.4
-// @description 브릿지 지우개 + 불렛(-) 방지 처리 (완벽한 투명화 완성)
+// @version     1.8.5
+// @description 덮어쓰기 방지 로직 적용 (2턴 후 멈춤 현상 완벽 해결)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.8.4';
+  const LOADER_VERSION = '1.8.5';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -72,36 +72,18 @@
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
   L0.moduleStatus = L0.moduleStatus || {};
-  L0.markLoaded = L0.markLoaded || function(name, meta) {
-    L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) };
-    L0['__' + name + 'Loaded'] = true;
-  };
-  L0.markFailed = L0.markFailed || function(name, error, meta) {
-    L0.moduleStatus[name] = {
-      ok: false,
-      time: Date.now(),
-      error: String(error && error.message || error || 'unknown'),
-      ...(meta || {})
-    };
-    L0['__' + name + 'Failed'] = true;
-  };
+  L0.markLoaded = L0.markLoaded || function(name, meta) { L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) }; L0['__' + name + 'Loaded'] = true; };
+  L0.markFailed = L0.markFailed || function(name, error, meta) { L0.moduleStatus[name] = { ok: false, time: Date.now(), error: String(error && error.message || error || 'unknown'), ...(meta || {}) }; L0['__' + name + 'Failed'] = true; };
 
   if (!L0.__menuQueue) {
-    const _mq = [];
-    const _smq = [];
-    L0.__menuQueue = _mq;
-    L0.__subMenuQueue = _smq;
-    L0.registerMenu = function(key, cb) { _mq.push({ key, cb }); };
-    L0.registerSubMenu = function(key, cb) { _smq.push({ key, cb }); };
+    L0.__menuQueue = []; L0.__subMenuQueue = [];
+    L0.registerMenu = function(key, cb) { L0.__menuQueue.push({ key, cb }); };
+    L0.registerSubMenu = function(key, cb) { L0.__subMenuQueue.push({ key, cb }); };
   }
 
-  if (!_w.__LoreInjReady) {
-    let _resolve;
-    const p = new Promise(r => { _resolve = r; });
-    p.__resolve = _resolve;
-    _w.__LoreInjReady = p;
-  }
+  if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
+  // 알림 팝업 함수
   function showLoreToast(msg, isSuccess) {
     try {
       const id = 'lore-inject-toast';
@@ -121,31 +103,41 @@
     const origFetch = _w.fetch && _w.fetch.bind(_w);
     const origWsSend = _w.WebSocket && _w.WebSocket.prototype && _w.WebSocket.prototype.send;
     if (!origFetch || !origWsSend) return;
-    let injectFn = null;
+    
+    let activeInjectFn = null;
 
-    async function injectText(text) {
-      if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
-      try { return await injectFn(text); } catch (e) { return text; }
+    async function processInjection(text) {
+      if (!activeInjectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
+      try {
+        const injected = await activeInjectFn(text);
+        if (!injected || injected === text) return text;
+        
+        let loreBlock = injected.replace(text, '').trim();
+        if (!loreBlock) return text;
+        
+        // 불렛 방지 및 알림
+        loreBlock = loreBlock.replace(/^- /gm, '‐ '); 
+        showLoreToast('✨ 로어 인젝트 완료!', true);
+        
+        return text + '\n\n⦗\n' + loreBlock + '\n⦘';
+      } catch (e) {
+        showLoreToast('🚨 로어 인젝트 오류!', false);
+        return text;
+      }
     }
 
     _w.WebSocket.prototype.send = function(data) {
       const ws = this;
-      if (injectFn && typeof data === 'string' && data.length > 10) {
+      if (activeInjectFn && typeof data === 'string' && data.length > 10) {
         const bi = data.indexOf('[');
         if (bi > 0) {
           try {
             const prefix = data.slice(0, bi);
             const arr = JSON.parse(data.slice(bi));
-            if (Array.isArray(arr) && arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string' && arr[1].message.length > 0) {
-              const orig = arr[1].message;
+            if (Array.isArray(arr) && arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string') {
               (async () => {
-                const mod = await injectText(orig);
-                if (orig !== mod) {
-                  arr[1].message = mod;
-                  origWsSend.call(ws, prefix + JSON.stringify(arr));
-                } else {
-                  origWsSend.call(ws, data);
-                }
+                arr[1].message = await processInjection(arr[1].message);
+                origWsSend.call(ws, prefix + JSON.stringify(arr));
               })();
               return;
             }
@@ -157,35 +149,22 @@
 
     _w.fetch = async function(...args) {
       try {
-        if (injectFn) {
+        if (activeInjectFn) {
           let reqUrl = '', isReq = false;
           if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; }
           else reqUrl = String(args[0] || '');
-          const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
-          if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
-            let bodyText = null;
-            if (isReq) { try { bodyText = await args[0].clone().text(); } catch (_) {} }
-            else if (args[1] && typeof args[1].body === 'string') bodyText = args[1].body;
-            if (bodyText) {
-              let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
-              if (body && typeof body === 'object') {
-                let injected = false;
+          if (String(isReq ? args[0].method : (args[1] || {}).method).toUpperCase() === 'POST' && reqUrl.includes('wrtn.ai')) {
+            let body = null;
+            const bodyText = isReq ? await args[0].clone().text() : (args[1] || {}).body;
+            try { body = JSON.parse(bodyText); } catch (_) {}
+            if (body && typeof body === 'object') {
                 if (Array.isArray(body.messages)) {
-                  for (let i = body.messages.length - 1; i >= 0; i--) {
-                    if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
-                      const orig = body.messages[i].content;
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body.messages[i].content = mod; injected = true; }
-                      break;
-                    }
-                  }
+                    const lastMsg = body.messages[body.messages.length - 1];
+                    if (lastMsg && lastMsg.role === 'user') lastMsg.content = await processInjection(lastMsg.content);
                 }
-                if (injected) {
-                  const newBodyText = JSON.stringify(body);
-                  if (isReq) args[0] = new Request(args[0], { body: newBodyText });
-                  else { args[1] = args[1] || {}; args[1].body = newBodyText; }
-                }
-              }
+                const newBodyText = JSON.stringify(body);
+                if (isReq) args[0] = new Request(args[0], { body: newBodyText });
+                else { args[1] = args[1] || {}; args[1].body = newBodyText; }
             }
           }
         }
@@ -193,32 +172,18 @@
       return origFetch.apply(this, args);
     };
 
+    // [끈질긴 하이재킹 핵심]
+    // 메인 스크립트가 __loreRegister를 호출할 때마다 가로채서 activeInjectFn에 저장
     _w.__loreRegister = function(fn) { 
-      injectFn = async function(text) {
-        try {
-          const injected = await fn(text);
-          if (!injected || injected === text) return text;
-          let loreBlock = injected.replace(text, '').trim();
-          if (!loreBlock) return text;
-          
-          // [1.8.4] 불렛 방지 패치: 줄 시작의 "- "를 특수 하이픈 "‐ "으로 교체
-          // 이렇게 하면 사이트 엔진이 불렛 목록을 만들지 않아 지우개가 완벽히 지웁니다.
-          loreBlock = loreBlock.replace(/^- /gm, '‐ '); 
-
-          showLoreToast('✨ 로어 인젝트 완료!', true);
-          return text + '\n\n⦗\n' + loreBlock + '\n⦘';
-        } catch(e) {
-          showLoreToast('🚨 로어 인젝트 오류!', false);
-          return text;
-        }
-      }; 
+        console.log('[LoreInj] 로어 함수 등록 감지 - 하이재킹 완료');
+        activeInjectFn = fn; 
     };
     L0.__interceptorLoaded = true;
-    L0.__earlyInterceptorLoaded = true;
   }
 
   installEarlyInterceptor();
 
+  // (이하 나머지 구조는 1.8.4와 동일하여 생략하거나 동일하게 유지)
   function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
   function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
   function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
