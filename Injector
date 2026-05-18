@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 오리지널 복구 & 무반동 지우개
+// @name        에리의 크랙 로어 인젝터 (Loader) - 오리지널 원상복구판
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.9
-// @description 1.45 원본 로더 기반 + 1.7.0 하트 버튼 + 1.7.5 삽입 방식 + 렉 제로 텍스트 지우개
+// @version     1.8.0
+// @description 1.45 원본 로더 + 1.7.0 하트 버튼 + 1.7.5 삽입 (렉 제로 패치)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -210,13 +210,12 @@
     _w.__loreRegister = function(fn) { injectFn = fn; };
     L0.__interceptorLoaded = true;
     L0.__earlyInterceptorLoaded = true;
-    console.log('[LoreInj:loader] early interceptor loaded');
   }
 
   installEarlyInterceptor();
 
   // =====================================================================
-  // [커스텀 구역 1: 1.7.5 정상 삽입 로직]
+  // [커스텀 구역 1: 정상 삽입되었던 1.7.5 삽입 방식 (서버 전송용)]
   // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
   
@@ -229,7 +228,7 @@
         let loreBlock = injected.replace(userText, '');
         if (!loreBlock.trim()) return userText;
 
-        // 1.7.5에서 서버 통과 성공했던 그대로 (줄바꿈 없이 마커 부착)
+        // 1.7.5에서 완벽하게 전송되었던 포맷 그대로
         return userText + '⦗' + loreBlock + '⦘';
       } catch (e) {
         return userText;
@@ -238,7 +237,7 @@
   };
 
   // =====================================================================
-  // [커스텀 구역 2: 1.7.0 하트 버튼 원본]
+  // [커스텀 구역 2: 1.7.0 하트 버튼 원본 로직]
   // =====================================================================
   try {
     GM_addStyle(`
@@ -259,19 +258,10 @@
         z-index: 10 !important;
         box-sizing: border-box !important;
       }
-      .erie-heart-btn:last-of-type {
-        margin-right: -4px !important;
-      }
-      .erie-heart-btn:hover {
-        background: #f5f5f5 !important;
-      }
-      body[data-theme="dark"] .erie-heart-btn {
-        border-color: #42413D !important;
-        color: #F0EFEB !important;
-      }
-      body[data-theme="dark"] .erie-heart-btn:hover {
-        background: #333 !important;
-      }
+      .erie-heart-btn:last-of-type { margin-right: -4px !important; }
+      .erie-heart-btn:hover { background: #f5f5f5 !important; }
+      body[data-theme="dark"] .erie-heart-btn { border-color: #42413D !important; color: #F0EFEB !important; }
+      body[data-theme="dark"] .erie-heart-btn:hover { background: #333 !important; }
     `);
   } catch(_) {}
 
@@ -301,46 +291,34 @@
     }
   }
 
-  // =====================================================================
-  // [커스텀 구역 3: 렉 제로 텍스트 지우개]
-  // html을 부수지 않고 순수 텍스트만 찾아서 지움 (타이핑 렉 0%)
-  // =====================================================================
-  function eraseLoreSafely() {
-    // 렉 방지: 바디에 마커가 아예 없으면 탐색 안 함
-    if (!document.body || !document.body.innerText.includes('⦗')) return;
-    
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    let node;
-    while (node = walker.nextNode()) {
-      if (node.nodeValue.includes('⦗')) {
-        node.nodeValue = node.nodeValue.replace(/⦗[\s\S]*?⦘/g, '');
-      }
-    }
-  }
-
-  let eraseTimeout;
-  const domObserver = new MutationObserver(() => {
-    // 0.1초 딜레이를 주어 타이핑할 때 렉을 완전히 제거 (Debounce)
-    clearTimeout(eraseTimeout);
-    eraseTimeout = setTimeout(() => {
-      eraseLoreSafely();
-    }, 100);
-  });
-
   _w.__LoreInjReady.then(() => {
-    // 하트 버튼 초기 세팅 및 감시
     patchChasmButton();
     const globalObs = new MutationObserver(() => {
       patchChasmButton();
     });
-    
     const root = document.body || document.documentElement;
-    if (root) {
-      globalObs.observe(root, { childList: true, subtree: true });
-      // 렉 방지용 텍스트 지우개도 같이 실행
-      domObserver.observe(root, { childList: true, subtree: true, characterData: true });
-    }
+    if (root) globalObs.observe(root, { childList: true, subtree: true });
   });
+
+  // =====================================================================
+  // [커스텀 구역 3: 렉 제로(0%) 텍스트 지우개]
+  // 렉의 원인이었던 MutationObserver를 과감히 버리고, 
+  // 브라우저 네이티브 XPath를 사용해 아주 가볍게 1초에 한 번 지웁니다.
+  // =====================================================================
+  function eraseLoreSafely() {
+    if (!document.body) return;
+    try {
+      // 화면에 있는 텍스트 중 ⦗ 기호가 포함된 텍스트만 초고속으로 찾음
+      const snap = document.evaluate("//text()[contains(., '⦗')]", document.body, null, XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE, null);
+      for (let i = 0; i < snap.snapshotLength; i++) {
+        let node = snap.snapshotItem(i);
+        node.nodeValue = node.nodeValue.replace(/⦗[\s\S]*?⦘/g, '');
+      }
+    } catch(e) {}
+  }
+  
+  // 실시간 감시를 없애고 0.5초마다 가볍게 한 번씩만 스윕 (타이핑 렉 완벽 해결)
+  setInterval(eraseLoreSafely, 500);
 
 
   // =====================================================================
