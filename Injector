@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 스마트 지우개 최종판
+// @name        에리의 크랙 로어 인젝터 (Loader) - 스마트 지우개 & UI 고정 (안전판)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.5
-// @description 모듈화된 로어 인젝터 로더 (시스템 문구 제거, 유저 설정 100% 반영 + 화면 삭제)
+// @version     1.7.7
+// @description \n 오류 원천 차단 및 마커 내부 공백 제거, UI 불변 고정 패치
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.7.5';
+  const LOADER_VERSION = '1.7.7';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -83,9 +83,6 @@
 
   if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
-  // =====================================================================
-  // [인터셉터] - 서버로 보내는 데이터 가로채기
-  // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -174,7 +171,7 @@
   installEarlyInterceptor();
 
   // =====================================================================
-  // [1.7.5 패치] 하드코딩 문구 제거, 유저 설정창 100% 반영 + 마커 씌우기
+  // [1.7.7 패치] 에러 유발 줄바꿈(\n) 완전 제거 및 밀착 패치
   // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
   
@@ -184,11 +181,11 @@
         const injected = await fn(userText);
         if (!injected || injected === userText) return userText;
 
-        // 1. 유저의 순수 채팅을 제외한 '나머지(앞/뒤 설정 문구 + 로어 본문)' 통째로 추출
-        let loreBlock = injected.replace(userText, '');
-        if (!loreBlock.trim()) return userText;
+        // .trim()을 통해 맨 앞, 맨 뒤에 딸려오는 쓸데없는 엔터 공백 제거
+        let loreBlock = injected.replace(userText, '').trim();
+        if (!loreBlock) return userText;
 
-        // 2. 강제 문구나 강제 줄바꿈 없이, 유저가 설정한 양식 양끝에 지우개용 마커(⦗ ⦘)만 씌움
+        // 위험한 \n 제거! 유저 텍스트 바로 뒤에 마커를 바짝 붙여서 안전하게 전송
         return userText + '⦗' + loreBlock + '⦘';
 
       } catch (e) {
@@ -199,47 +196,7 @@
   };
 
   // =====================================================================
-  // [스마트 지우개] 화면에서 마커(⦗ ⦘) 안의 내용을 깔끔하게 삭제
-  // =====================================================================
-  function eraseLoreHTML() {
-    try {
-      const elements = Array.from(document.querySelectorAll('*'))
-        .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
-      
-      if (elements.length === 0) return;
-
-      // 요소의 자식(가장 안쪽 텍스트)부터 안전하게 처리하도록 정렬
-      elements.sort((a, b) => {
-        let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
-        let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
-        return depthB - depthA;
-      });
-
-      const processed = new Set();
-      elements.forEach(el => {
-        if (!processed.has(el)) {
-          // 정규식: 마커 안의 텍스트 삭제 + 마커 바로 앞에 생길 수 있는 공백이나 줄바꿈 태그(<br>)까지 여백 없이 삭제
-          el.innerHTML = el.innerHTML.replace(/(?:<br\s*\/?>|\s)*⦗[\s\S]*?⦘/gi, '');
-          
-          let parent = el.parentNode;
-          while(parent) { processed.add(parent); parent = parent.parentNode; }
-        }
-      });
-    } catch (e) {}
-  }
-
-  // 화면이 변할 때마다 스마트 지우개 즉시 작동
-  const domObserver = new MutationObserver(() => {
-    eraseLoreHTML();
-  });
-  domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-
-  // 놓치는 텍스트가 없도록 1초마다 보조 청소
-  setInterval(eraseLoreHTML, 1000);
-
-
-  // =====================================================================
-  // [UI 패치] 🔥Chasm 버튼을 ♡ 로 교체
+  // [UI 패치] 버튼 CSS
   // =====================================================================
   try {
     GM_addStyle(`
@@ -267,30 +224,63 @@
     `);
   } catch(_) {}
 
+  // 화면 새로고침 시에도 지속적으로 버튼을 변경하는 함수
   function patchChasmButton() {
     const allButtons = document.querySelectorAll('button');
     for (const btn of allButtons) {
       const rawText = (btn.textContent || '').trim();
       const rawHTML = (btn.innerHTML || '').trim();
       const isChasmBtn = rawText.includes('Chasm') || rawHTML.includes('Chasm') || rawText.includes('🔥') || rawHTML.includes('🔥') || btn.dataset.loreToolBtn !== undefined;
+      
       if (!isChasmBtn) continue;
-      if (btn.dataset.eriePatched === '1') continue;
+
+      // 이미 처리된 버튼이라도, 내용물이 다시 덮어씌워졌다면 강제로 복구
+      if (btn.dataset.eriePatched === '1') {
+        if (btn.innerHTML !== '♡') btn.innerHTML = '♡';
+        continue;
+      }
 
       btn.dataset.eriePatched = '1';
       btn.innerHTML = '♡';
       btn.classList.add('erie-heart-btn');
-
-      const btnObs = new MutationObserver(() => {
-        if ((btn.textContent || '').trim() !== '♡' || (btn.innerHTML || '').trim() !== '♡') { btn.innerHTML = '♡'; }
-      });
-      btnObs.observe(btn, { childList: true, characterData: true, subtree: true });
-      break;
     }
   }
 
-  _w.__LoreInjReady.then(() => {
+  // =====================================================================
+  // [스마트 지우개] 화면에서 마커(⦗ ⦘) 안의 내용 삭제
+  // =====================================================================
+  function eraseLoreHTML() {
+    try {
+      const elements = Array.from(document.querySelectorAll('*'))
+        .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
+      
+      if (elements.length === 0) return;
+
+      elements.sort((a, b) => {
+        let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
+        let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
+        return depthB - depthA;
+      });
+
+      const processed = new Set();
+      elements.forEach(el => {
+        if (!processed.has(el)) {
+          // 마커 앞의 엔터(\n, <br>)나 공백까지 여백 없이 깔끔하게 지움
+          el.innerHTML = el.innerHTML.replace(/(?:<br\s*\/?>|\n|\s)*⦗[\s\S]*?⦘/gi, '');
+          let parent = el.parentNode;
+          while(parent) { processed.add(parent); parent = parent.parentNode; }
+        }
+      });
+    } catch (e) {}
+  }
+
+  // 핵심: 지우개와 버튼 패치를 묶어서 전역 감시 (화면이 갱신되어도 무조건 유지됨)
+  const domObserver = new MutationObserver(() => {
+    eraseLoreHTML();
     patchChasmButton();
   });
+  domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  setInterval(() => { eraseLoreHTML(); patchChasmButton(); }, 1000);
 
   // (아래는 로더 핵심 파일 호출부)
   function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
