@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 오리지널 원상복구판
+// @name        에리의 크랙 로어 인젝터 (Loader) - 완벽 융합본
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.0
-// @description 1.45 원본 로더 + 1.7.0 하트 버튼 + 1.7.5 삽입 (렉 제로 패치)
+// @version     1.8.1
+// @description 1.45 원본 로더 + 1.7.0 하트 버튼 + 1.7.5 삽입 & 지우개 (임의 수정 금지판)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   // =====================================================================
-  // [원본 1.45 로더 코어 구역] (단 1글자도 수정하지 않음)
+  // [1. 1.45 원본 로더 구역] 
   // =====================================================================
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
   const LOADER_VERSION = '1.4.0-test.65';
@@ -210,12 +210,13 @@
     _w.__loreRegister = function(fn) { injectFn = fn; };
     L0.__interceptorLoaded = true;
     L0.__earlyInterceptorLoaded = true;
+    console.log('[LoreInj:loader] early interceptor loaded');
   }
 
   installEarlyInterceptor();
 
   // =====================================================================
-  // [커스텀 구역 1: 정상 삽입되었던 1.7.5 삽입 방식 (서버 전송용)]
+  // [2. 1.7.5 삽입 방식] (가장 완벽하게 전송됐던 코드)
   // =====================================================================
   const _origLoreRegister = _w.__loreRegister;
   
@@ -228,7 +229,7 @@
         let loreBlock = injected.replace(userText, '');
         if (!loreBlock.trim()) return userText;
 
-        // 1.7.5에서 완벽하게 전송되었던 포맷 그대로
+        // 1.7.5에서 서버 에러 없이 정상 작동했던 코드 그대로 적용 (\n 없음)
         return userText + '⦗' + loreBlock + '⦘';
       } catch (e) {
         return userText;
@@ -237,7 +238,7 @@
   };
 
   // =====================================================================
-  // [커스텀 구역 2: 1.7.0 하트 버튼 원본 로직]
+  // [3. 1.7.0 하트 버튼 원본] (맨 처음 주셨던 안정적인 코드)
   // =====================================================================
   try {
     GM_addStyle(`
@@ -258,10 +259,19 @@
         z-index: 10 !important;
         box-sizing: border-box !important;
       }
-      .erie-heart-btn:last-of-type { margin-right: -4px !important; }
-      .erie-heart-btn:hover { background: #f5f5f5 !important; }
-      body[data-theme="dark"] .erie-heart-btn { border-color: #42413D !important; color: #F0EFEB !important; }
-      body[data-theme="dark"] .erie-heart-btn:hover { background: #333 !important; }
+      .erie-heart-btn:last-of-type {
+        margin-right: -4px !important;
+      }
+      .erie-heart-btn:hover {
+        background: #f5f5f5 !important;
+      }
+      body[data-theme="dark"] .erie-heart-btn {
+        border-color: #42413D !important;
+        color: #F0EFEB !important;
+      }
+      body[data-theme="dark"] .erie-heart-btn:hover {
+        background: #333 !important;
+      }
     `);
   } catch(_) {}
 
@@ -291,38 +301,55 @@
     }
   }
 
+  // =====================================================================
+  // [4. 1.7.5 화면 지우개 원본] (렉 없이 정상 작동했던 코드)
+  // =====================================================================
+  function eraseLoreHTML() {
+    try {
+      const elements = Array.from(document.querySelectorAll('*'))
+        .filter(el => el.innerHTML && el.innerHTML.includes('⦗') && el.innerHTML.includes('⦘'));
+      
+      if (elements.length === 0) return;
+
+      elements.sort((a, b) => {
+        let depthA = 0, nodeA = a; while(nodeA.parentNode) { depthA++; nodeA = nodeA.parentNode; }
+        let depthB = 0, nodeB = b; while(nodeB.parentNode) { depthB++; nodeB = nodeB.parentNode; }
+        return depthB - depthA;
+      });
+
+      const processed = new Set();
+      elements.forEach(el => {
+        if (!processed.has(el)) {
+          el.innerHTML = el.innerHTML.replace(/(?:<br\s*\/?>|\s)*⦗[\s\S]*?⦘/gi, '');
+          let parent = el.parentNode;
+          while(parent) { processed.add(parent); parent = parent.parentNode; }
+        }
+      });
+    } catch (e) {}
+  }
+
+  // =====================================================================
+  // [5. 로딩 완료 후 실행 (1.7.0 & 1.7.5 융합)]
+  // =====================================================================
   _w.__LoreInjReady.then(() => {
+    // 1. 하트 버튼 작동 (1.7.0 원본)
     patchChasmButton();
     const globalObs = new MutationObserver(() => {
       patchChasmButton();
     });
     const root = document.body || document.documentElement;
     if (root) globalObs.observe(root, { childList: true, subtree: true });
+
+    // 2. 화면 지우개 작동 (1.7.5 원본)
+    const domObserver = new MutationObserver(() => {
+      eraseLoreHTML();
+    });
+    domObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    setInterval(eraseLoreHTML, 1000);
   });
 
   // =====================================================================
-  // [커스텀 구역 3: 렉 제로(0%) 텍스트 지우개]
-  // 렉의 원인이었던 MutationObserver를 과감히 버리고, 
-  // 브라우저 네이티브 XPath를 사용해 아주 가볍게 1초에 한 번 지웁니다.
-  // =====================================================================
-  function eraseLoreSafely() {
-    if (!document.body) return;
-    try {
-      // 화면에 있는 텍스트 중 ⦗ 기호가 포함된 텍스트만 초고속으로 찾음
-      const snap = document.evaluate("//text()[contains(., '⦗')]", document.body, null, XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE, null);
-      for (let i = 0; i < snap.snapshotLength; i++) {
-        let node = snap.snapshotItem(i);
-        node.nodeValue = node.nodeValue.replace(/⦗[\s\S]*?⦘/g, '');
-      }
-    } catch(e) {}
-  }
-  
-  // 실시간 감시를 없애고 0.5초마다 가볍게 한 번씩만 스윕 (타이핑 렉 완벽 해결)
-  setInterval(eraseLoreSafely, 500);
-
-
-  // =====================================================================
-  // [원본 1.45 로더 하단부 로직] (단 1글자도 수정하지 않음)
+  // [1.45 원본 로더 하단부 로직] (단 1글자도 수정하지 않음)
   // =====================================================================
   function isChatPath(path = location.pathname) {
     return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
