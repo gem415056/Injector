@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.3
+// @version     1.5.4
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -114,7 +114,10 @@
         if (old) old.remove();
         let toast = document.createElement('div');
         toast.id = 'crack-ext-toast-lore';
-        toast.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-10px);z-index:999999999;background:' + (isError ? '#d66' : '#1a1a1a') + ';color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.25);transition:opacity 0.3s,transform 0.3s;';
+        
+        let borderColor = isError ? '#d66' : '#4a9';
+        
+        toast.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-10px);z-index:999999999;background:#1a1a1a;border:1px solid ' + borderColor + ';border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;transition:opacity 0.3s,transform 0.3s;';
         toast.textContent = message;
         document.body.appendChild(toast);
         requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateX(-50%) translateY(0)'; });
