@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.4 (불렛 방지 패치)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.5 (장기 대화 멈춤 버그 해결)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.4
-// @description 브릿지 지우개 + 불렛(-) 방지 처리 (완벽한 투명화 완성)
+// @version     1.8.5
+// @description 브릿지 지우개 + 불렛 방지 + 장기 대화 데이터 구조(body.variables) 복구
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.8.4';
+  const LOADER_VERSION = '1.8.5';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -72,35 +72,16 @@
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
   L0.moduleStatus = L0.moduleStatus || {};
-  L0.markLoaded = L0.markLoaded || function(name, meta) {
-    L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) };
-    L0['__' + name + 'Loaded'] = true;
-  };
-  L0.markFailed = L0.markFailed || function(name, error, meta) {
-    L0.moduleStatus[name] = {
-      ok: false,
-      time: Date.now(),
-      error: String(error && error.message || error || 'unknown'),
-      ...(meta || {})
-    };
-    L0['__' + name + 'Failed'] = true;
-  };
+  L0.markLoaded = L0.markLoaded || function(name, meta) { L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) }; L0['__' + name + 'Loaded'] = true; };
+  L0.markFailed = L0.markFailed || function(name, error, meta) { L0.moduleStatus[name] = { ok: false, time: Date.now(), error: String(error && error.message || error || 'unknown'), ...(meta || {}) }; L0['__' + name + 'Failed'] = true; };
 
   if (!L0.__menuQueue) {
-    const _mq = [];
-    const _smq = [];
-    L0.__menuQueue = _mq;
-    L0.__subMenuQueue = _smq;
-    L0.registerMenu = function(key, cb) { _mq.push({ key, cb }); };
-    L0.registerSubMenu = function(key, cb) { _smq.push({ key, cb }); };
+    L0.__menuQueue = []; L0.__subMenuQueue = [];
+    L0.registerMenu = function(key, cb) { L0.__menuQueue.push({ key, cb }); };
+    L0.registerSubMenu = function(key, cb) { L0.__subMenuQueue.push({ key, cb }); };
   }
 
-  if (!_w.__LoreInjReady) {
-    let _resolve;
-    const p = new Promise(r => { _resolve = r; });
-    p.__resolve = _resolve;
-    _w.__LoreInjReady = p;
-  }
+  if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
   function showLoreToast(msg, isSuccess) {
     try {
@@ -116,6 +97,9 @@
     } catch(e) {}
   }
 
+  // =====================================================================
+  // [누락 복구!] 인터셉터 - 장기 대화 데이터(body.variables) 체크 복원
+  // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -170,6 +154,8 @@
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
                 let injected = false;
+                
+                // 1. 일반 메시지 구조 검사
                 if (Array.isArray(body.messages)) {
                   for (let i = body.messages.length - 1; i >= 0; i--) {
                     if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
@@ -180,6 +166,31 @@
                     }
                   }
                 }
+                
+                // 2. 단일 프롬프트 구조 검사
+                if (!injected) {
+                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                    if (typeof body[key] === 'string') {
+                      const orig = body[key];
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { body[key] = mod; injected = true; }
+                      break;
+                    }
+                  }
+                }
+                
+                // 3. [복원됨!] 5턴 이후 장기 대화용 variables 구조 검사
+                if (!injected && body.variables && typeof body.variables === 'object') {
+                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                    if (typeof body.variables[key] === 'string') {
+                      const orig = body.variables[key];
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { body.variables[key] = mod; injected = true; }
+                      break;
+                    }
+                  }
+                }
+
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
@@ -201,8 +212,7 @@
           let loreBlock = injected.replace(text, '').trim();
           if (!loreBlock) return text;
           
-          // [1.8.4] 불렛 방지 패치: 줄 시작의 "- "를 특수 하이픈 "‐ "으로 교체
-          // 이렇게 하면 사이트 엔진이 불렛 목록을 만들지 않아 지우개가 완벽히 지웁니다.
+          // 불렛 방지
           loreBlock = loreBlock.replace(/^- /gm, '‐ '); 
 
           showLoreToast('✨ 로어 인젝트 완료!', true);
@@ -305,6 +315,7 @@
 
   if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
 
+  // [투명화] 브릿지 지우개 
   function eraseLoreSafely() {
     if (!document.body || !document.body.textContent.includes('⦗')) return;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
@@ -330,6 +341,7 @@
     }
   }
 
+  // 하트 버튼 교체
   function patchChasmButton() {
     const allButtons = document.querySelectorAll('button');
     for (const btn of allButtons) {
