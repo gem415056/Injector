@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.2
+// @version     1.5.3
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -299,7 +299,6 @@
               color: #333 !important; font-size: 16px !important; font-weight: normal !important;
               cursor: pointer !important; padding: 0 !important; transition: background 0.2s !important;
               box-sizing: border-box !important; flex-shrink: 0 !important;
-              margin-right: 8px !important;
           }
           .lore-chasm-heart-btn:hover { background-color: #ddd !important; }
           body[data-theme="dark"] .lore-chasm-heart-btn, html.dark .lore-chasm-heart-btn {
@@ -315,32 +314,46 @@
   function replaceChasmButton() {
       injectChasmHeartStyle();
       
-      const buttons = document.querySelectorAll('button');
-      let chasmBtn = null;
+      const headerContainer = document.querySelector('.absolute.z-\\[5\\] .flex.gap-3.items-center');
+      if (!headerContainer) return;
+
+      // 이미 커스텀 버튼이 생성되어 있다면 무한 증식 방지를 위해 작업 중단
+      if (headerContainer.querySelector('.lore-chasm-heart-btn')) return;
+
+      // 사이트의 원본 Chasm Tools 버튼 찾기
+      const buttons = headerContainer.querySelectorAll('button');
+      let origChasmBtn = null;
       for (let i = 0; i < buttons.length; i++) {
           const text = buttons[i].textContent || buttons[i].innerText;
           if (text && text.includes('Chasm Tools')) {
-              chasmBtn = buttons[i];
+              origChasmBtn = buttons[i];
               break;
           }
       }
       
-      if (chasmBtn) {
-          if (chasmBtn.innerHTML !== '♡') {
-              chasmBtn.innerHTML = '♡';
-              chasmBtn.title = 'Chasm Tools';
-              chasmBtn.className = 'crack-ext-ai-btn crack-uni-btn lore-chasm-heart-btn';
-          }
+      if (origChasmBtn) {
+          // 원본 버튼을 지우면 사이트가 에러를 뿜으며 재생성하므로 투명하게 숨김 처리만 함
+          origChasmBtn.style.display = 'none';
           
-          const headerContainer = document.querySelector('.absolute.z-\\[5\\] .flex.gap-3.items-center');
-          if (headerContainer) {
-              const aiBtn = headerContainer.querySelector('button[title="AI 요약"]');
-              if (aiBtn && chasmBtn.nextSibling !== aiBtn) {
-                  aiBtn.before(chasmBtn);
-              } 
-              else if (!aiBtn && headerContainer.firstChild !== chasmBtn) {
-                  headerContainer.prepend(chasmBtn);
-              }
+          // 우리가 디자인한 가짜 하트 버튼 생성
+          const customBtn = document.createElement('button');
+          customBtn.innerHTML = '♡';
+          customBtn.title = 'Chasm Tools';
+          customBtn.className = 'crack-ext-ai-btn crack-uni-btn lore-chasm-heart-btn';
+          
+          // 가짜 버튼을 누르면 숨겨둔 진짜 버튼이 눌리도록 연동 (프록시 기법)
+          customBtn.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              origChasmBtn.click();
+          });
+          
+          // 버튼 위치 삽입
+          const aiBtn = headerContainer.querySelector('button[title="AI 요약"]');
+          if (aiBtn) {
+              aiBtn.before(customBtn);
+          } else {
+              headerContainer.prepend(customBtn);
           }
       }
   }
