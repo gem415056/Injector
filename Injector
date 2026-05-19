@@ -72,16 +72,35 @@
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
   L0.moduleStatus = L0.moduleStatus || {};
-  L0.markLoaded = L0.markLoaded || function(name, meta) { L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) }; L0['__' + name + 'Loaded'] = true; };
-  L0.markFailed = L0.markFailed || function(name, error, meta) { L0.moduleStatus[name] = { ok: false, time: Date.now(), error: String(error && error.message || error || 'unknown'), ...(meta || {}) }; L0['__' + name + 'Failed'] = true; };
+  L0.markLoaded = L0.markLoaded || function(name, meta) {
+    L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) };
+    L0['__' + name + 'Loaded'] = true;
+  };
+  L0.markFailed = L0.markFailed || function(name, error, meta) {
+    L0.moduleStatus[name] = {
+      ok: false,
+      time: Date.now(),
+      error: String(error && error.message || error || 'unknown'),
+      ...(meta || {})
+    };
+    L0['__' + name + 'Failed'] = true;
+  };
 
   if (!L0.__menuQueue) {
-    L0.__menuQueue = []; L0.__subMenuQueue = [];
-    L0.registerMenu = function(key, cb) { L0.__menuQueue.push({ key, cb }); };
-    L0.registerSubMenu = function(key, cb) { L0.__subMenuQueue.push({ key, cb }); };
+    const _mq = [];
+    const _smq = [];
+    L0.__menuQueue = _mq;
+    L0.__subMenuQueue = _smq;
+    L0.registerMenu = function(key, cb) { _mq.push({ key, cb }); };
+    L0.registerSubMenu = function(key, cb) { _smq.push({ key, cb }); };
   }
 
-  if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
+  if (!_w.__LoreInjReady) {
+    let _resolve;
+    const p = new Promise(r => { _resolve = r; });
+    p.__resolve = _resolve;
+    _w.__LoreInjReady = p;
+  }
 
   function showLoreToast(msg, isSuccess) {
     try {
@@ -229,17 +248,41 @@
 
   installEarlyInterceptor();
 
-  function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
-  function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
-  function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
+  function isChatPath(path = location.pathname) {
+    return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
+      || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path)
+      || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path);
+  }
+
+  function isHomePath(path = location.pathname) {
+    return path === '/' || path === '';
+  }
+
+  function updateRoute() {
+    L0.route = {
+      isChat: isChatPath(),
+      isHome: isHomePath(),
+      path: location.pathname,
+      href: location.href
+    };
+  }
 
   function onRouteChange(cb) {
     let last = location.href;
-    const fire = () => { if (last === location.href) return; last = location.href; updateRoute(); try { cb(); } catch (e) {} };
+    const fire = () => {
+      if (last === location.href) return;
+      last = location.href;
+      updateRoute();
+      try { cb(); } catch (e) { console.warn('[LoreInj] routechange callback 실패:', e); }
+    };
     const patchHistory = (name) => {
       const orig = history[name];
       if (!orig || orig.__lorePatched) return;
-      history[name] = function() { const ret = orig.apply(this, arguments); setTimeout(fire, 0); return ret; };
+      history[name] = function() {
+        const ret = orig.apply(this, arguments);
+        setTimeout(fire, 0);
+        return ret;
+      };
       history[name].__lorePatched = true;
     };
     try { patchHistory('pushState'); patchHistory('replaceState'); } catch (_) {}
@@ -248,7 +291,20 @@
     try { window.addEventListener('hashchange', fire); } catch (_) {}
   }
 
-  Object.assign(L0, { isChatPath, isHomePath, onRouteChange, runWhenChatRoute(init) { if (isChatPath()) return init(); let started = false; onRouteChange(() => { if (started || !isChatPath()) return; started = true; init(); }); }});
+  Object.assign(L0, {
+    isChatPath,
+    isHomePath,
+    onRouteChange,
+    runWhenChatRoute(init) {
+      if (isChatPath()) return init();
+      let started = false;
+      onRouteChange(() => {
+        if (started || !isChatPath()) return;
+        started = true;
+        init();
+      });
+    }
+  });
   updateRoute();
 
   function showLoaderBadge(text, color = '#4a9') {
@@ -268,7 +324,10 @@
   }
 
   function hideLoaderBadge() {
-    try { const el = document.getElementById('lore-lite-loader-badge'); if (el) el.remove(); } catch (_) {}
+    try {
+      const el = document.getElementById('lore-lite-loader-badge');
+      if (el) el.remove();
+    } catch (_) {}
   }
 
   async function fetchText(url) {
@@ -286,17 +345,41 @@
     const requiredSubs = ['__subMainLoaded', '__subLoreLoaded', '__subMergeLoaded', '__subSnapshotLoaded', '__subFileLoaded', '__subExtractLoaded', '__subRefinerLoaded', '__subLogLoaded', '__subSessionLoaded', '__subApiLoaded', '__subHelpLoaded'];
     const requiredAll = requiredCore.concat(requiredSubs);
     let settled = false;
-    const settle = (payload) => { if (settled) return; settled = true; try { _w.__LoreInjReady.__resolve(payload); } catch (_) {} };
+
+    const settle = (payload) => {
+      if (settled) return;
+      settled = true;
+      try { _w.__LoreInjReady.__resolve(payload); } catch (_) {}
+      try { _w.dispatchEvent(new CustomEvent('LoreInj:ready', { detail: payload })); } catch (_) {}
+    };
+
     const check = () => {
       const L = _w.__LoreInj;
       updateRoute();
       const missingCore = requiredCore.filter(k => !L[k]);
       const missingSubs = requiredSubs.filter(k => !L[k]);
       if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
-      if (missingCore.length === 0 && missingSubs.length === 0) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION }); hideLoaderBadge(); return; }
-      if (missingCore.length === 0 && missingSubs.length > 0 && Date.now() - (L.__gateCoreReadyAt || Date.now()) >= SUB_SOFT_WAIT_MS) { L.allReady = true; settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true }); hideLoaderBadge(); return; }
+      if (missingCore.length === 0 && missingSubs.length === 0) {
+        L.allReady = true;
+        console.log('[LoreInj v' + (L.VER || LOADER_VERSION) + '] 게이트 통과: 전체 모듈 로드');
+        settle({ ok: true, ver: L.VER || LOADER_VERSION });
+        hideLoaderBadge();
+        return;
+      }
+      if (missingCore.length === 0 && missingSubs.length > 0 && Date.now() - (L.__gateCoreReadyAt || Date.now()) >= SUB_SOFT_WAIT_MS) {
+        L.allReady = true;
+        L.partialReady = true;
+        L.missingSubs = missingSubs;
+        console.warn('[LoreInj] 서브모듈 일부 미로드 — partial gate:', missingSubs);
+        settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true, missingSubs, moduleStatus: L.moduleStatus || {} });
+        hideLoaderBadge();
+        return;
+      }
       if (Date.now() < gateDeadline) return setTimeout(check, POLL_MS);
-      settle({ ok: false, reason: 'timeout' }); showLoaderBadge('로어 로드 지연', '#d66');
+      const missing = requiredAll.filter(k => !L[k]);
+      console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
+      settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
+      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
     };
     check();
   }
@@ -304,16 +387,34 @@
   async function loadHeavyModules() {
     if (L0.__dynamicLoadStarted || L0.__dynamicLoaded) return;
     L0.__dynamicLoadStarted = true;
+    L0.__dynamicLoadStartedAt = Date.now();
     showLoaderBadge('로어 모듈 로드 중');
     try {
-      const codes = await Promise.all(MODULES.map(async (url) => { const code = await fetchText(url); return '\n/* ---- ' + url + ' ---- */\n' + code; }));
-      eval(codes.join('\n'));
+      const codes = await Promise.all(MODULES.map(async (url) => {
+        const code = await fetchText(url);
+        return '\n/* ---- ' + url + ' ---- */\n' + code;
+      }));
+      const bundle = codes.join('\n');
+      eval(bundle);
       L0.__dynamicLoaded = true;
+      L0.__dynamicLoadedAt = Date.now();
       startReadyGate();
-    } catch (e) { showLoaderBadge('로어 로드 실패', '#d66'); }
+    } catch (e) {
+      L0.__dynamicLoadError = String(e && e.message || e);
+      console.error('[LoreInj] 동적 로드 실패:', e);
+      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
+      try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
+    }
   }
 
-  if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
+  if (isChatPath()) {
+    loadHeavyModules();
+  } else {
+    console.log('[LoreInj loader ' + LOADER_VERSION + '] non-chat route: heavy modules deferred', location.pathname);
+    onRouteChange(() => {
+      if (isChatPath()) loadHeavyModules();
+    });
+  }
 
   // [투명화] 브릿지 지우개 
   function eraseLoreSafely() {
