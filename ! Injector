@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.0
+// @version     1.5.1
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -286,34 +286,69 @@
   }
   setInterval(eraseLoreSafely, 1000);
 
+  // 하트 버튼 스타일 CSS 강제 주입
+  function injectChasmHeartStyle() {
+      if (document.getElementById('chasm-heart-style')) return;
+      const style = document.createElement('style');
+      style.id = 'chasm-heart-style';
+      style.textContent = `
+          .lore-chasm-heart-btn {
+              display: inline-flex !important; align-items: center !important; justify-content: center !important;
+              width: 36px !important; height: 36px !important; border-radius: 8px !important;
+              background-color: #f4f4f5 !important; border: 1px solid #e4e4e7 !important;
+              color: #18181b !important; font-size: 16px !important; font-weight: normal !important;
+              cursor: pointer !important; padding: 0 !important; transition: all 0.2s !important;
+              box-sizing: border-box !important; flex-shrink: 0 !important;
+          }
+          .lore-chasm-heart-btn:hover { background-color: #e4e4e7 !important; }
+          body[data-theme="dark"] .lore-chasm-heart-btn, html.dark .lore-chasm-heart-btn {
+              background-color: #27272a !important; border-color: #3f3f46 !important; color: #f4f4f5 !important;
+          }
+          body[data-theme="dark"] .lore-chasm-heart-btn:hover, html.dark .lore-chasm-heart-btn:hover { background-color: #3f3f46 !important; }
+      `;
+      document.head.appendChild(style);
+  }
+
   function replaceChasmButton() {
+      injectChasmHeartStyle();
+      
       const buttons = document.querySelectorAll('button');
       let chasmBtn = null;
       for (let i = 0; i < buttons.length; i++) {
-          if (buttons[i].textContent.trim() === 'Chasm Tools' || buttons[i].innerText.trim() === 'Chasm Tools') {
+          const text = buttons[i].textContent || buttons[i].innerText;
+          // 버튼 텍스트에 Chasm Tools가 포함되어 있으면 선택 (태그나 공백이 섞여 있어도 감지)
+          if (text && text.includes('Chasm Tools')) {
               chasmBtn = buttons[i];
               break;
           }
       }
       
-      if (chasmBtn && !chasmBtn.dataset.loreHeartApplied) {
-          chasmBtn.dataset.loreHeartApplied = 'true';
-          chasmBtn.innerHTML = '♡';
-          chasmBtn.title = 'Chasm Tools';
-          chasmBtn.className = 'crack-ext-ai-btn crack-uni-btn';
+      if (chasmBtn) {
+          // 모양이 풀려있으면 다시 하트모양과 전용 클래스로 덮어씌움
+          if (chasmBtn.innerHTML !== '♡') {
+              chasmBtn.innerHTML = '♡';
+              chasmBtn.title = 'Chasm Tools';
+              chasmBtn.classList.add('lore-chasm-heart-btn');
+          }
           
+          // 헤더 컨테이너 찾기
           const headerContainer = document.querySelector('.absolute.z-\\[5\\] .flex.gap-3.items-center');
           if (headerContainer) {
-              const aiBtn = headerContainer.querySelector('.crack-ext-ai-btn[title="AI 요약"]');
-              if (aiBtn) {
+              const aiBtn = headerContainer.querySelector('button[title="AI 요약"]');
+              
+              // AI 요약 버튼이 있고, Chasm 버튼이 그 바로 앞이 아니라면 위치 이동
+              if (aiBtn && chasmBtn.nextSibling !== aiBtn) {
                   aiBtn.before(chasmBtn);
-              } else {
+              } 
+              // AI 요약 버튼이 아직 로드되지 않았다면 컨테이너 맨 앞에 배치
+              else if (!aiBtn && headerContainer.firstChild !== chasmBtn) {
                   headerContainer.prepend(chasmBtn);
               }
           }
       }
   }
-  setInterval(replaceChasmButton, 2000);
+  // 사이트 UI가 새로고침되어 원상복구되는 것을 막기 위해 0.5초마다 감시 및 유지
+  setInterval(replaceChasmButton, 500);
 
   function isChatPath(path = location.pathname) {
     return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
