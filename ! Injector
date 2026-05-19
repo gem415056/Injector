@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.5
+// @version     1.4.0-test.65
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -252,8 +252,7 @@
   function eraseLoreSafely() {
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
       let node;
-      let inLore = false;
-      let loreParent = null; // 지우개가 말풍선을 벗어나지 않도록 가두는 변수
+      const targets = [];
       
       while (node = walker.nextNode()) {
           let parent = node.parentNode;
@@ -281,49 +280,81 @@
               parent = parent.parentNode;
           }
           
-          // 보호 구역에 포함된 요소는 절대 건드리지 않고 스킵
           if (skipNode) continue;
 
-          let text = node.nodeValue;
-          
-          if (!inLore) {
-              if (text.includes('⦗')) {
-                  if (text.includes('⦘')) {
-                      // 한 줄에 괄호가 모두 있을 경우 (가장 흔한 케이스)
-                      node.nodeValue = text.replace(/⦗[\s\S]*?⦘/g, "");
-                  } else {
-                      // 열린 괄호만 있을 경우 추적 시작
-                      inLore = true;
-                      loreParent = node.parentElement; // 추적 시작점 고정
-                      node.nodeValue = text.substring(0, text.indexOf('⦗'));
-                  }
-              }
-          } else {
-              // [안전 장치] 지우개가 원래 속했던 컨테이너를 벗어났다면, 닫는 괄호가 없었던 것으로 판단하고 지우개 초기화
-              if (loreParent && !loreParent.contains(node)) {
-                  inLore = false;
-                  loreParent = null;
-                  
-                  // 새 영역에서 다시 괄호 검사
-                  if (text.includes('⦗')) {
-                      if (text.includes('⦘')) {
-                          node.nodeValue = text.replace(/⦗[\s\S]*?⦘/g, "");
-                      } else {
-                          inLore = true;
-                          loreParent = node.parentElement;
-                          node.nodeValue = text.substring(0, text.indexOf('⦗'));
-                      }
-                  }
-                  continue;
-              }
+          // 이미 숨김 태그로 감싸진 노드는 다시 감싸지 않음 (무한 루프 방지)
+          if (node.parentNode && node.parentNode.classList && node.parentNode.classList.contains('hidden-lore-block')) {
+              continue;
+          }
 
-              if (text.includes('⦘')) {
-                  inLore = false;
-                  loreParent = null;
-                  node.nodeValue = text.substring(text.indexOf('⦘') + 1);
-              } else {
-                  node.nodeValue = ""; // 투명화 처리
-              }
+          if (node.nodeValue && (node.nodeValue.includes('⦗') || node.nodeValue.includes('⦘'))) {
+              targets.push(node);
+          }
+      }
+      
+      // 감지된 로어 텍스트 노드들을 DOM 구조를 유지하며 투명 Span 태그로 감싸기 수행
+      for (let i = 0; i < targets.length; i++) {
+          const target = targets[i];
+          const text = target.nodeValue;
+          const parent = target.parentNode;
+          if (!parent) continue;
+          
+          // 1. 단일 노드에 여닫는 괄호가 모두 포함된 경우
+          if (text.includes('⦗') && text.includes('⦘')) {
+              const start = text.indexOf('⦗');
+              const end = text.indexOf('⦘') + 1;
+              
+              const prefix = text.substring(0, start);
+              const lore = text.substring(start, end);
+              const suffix = text.substring(end);
+              
+              const fragment = document.createDocumentFragment();
+              if (prefix) fragment.appendChild(document.createTextNode(prefix));
+              
+              const span = document.createElement('span');
+              span.className = 'hidden-lore-block';
+              span.style.cssText = 'display: none !important; opacity: 0 !important; font-size: 0 !important; width: 0 !important; height: 0 !important; clip: rect(0 0 0 0) !important; overflow: hidden !important; position: absolute !important;';
+              span.textContent = lore;
+              fragment.appendChild(span);
+              
+              if (suffix) fragment.appendChild(document.createTextNode(suffix));
+              
+              parent.replaceChild(fragment, target);
+          } 
+          // 2. 여러 노드로 쪼개져 열린 괄호만 먼저 포함된 경우
+          else if (text.includes('⦗')) {
+              const start = text.indexOf('⦗');
+              const prefix = text.substring(0, start);
+              const lore = text.substring(start);
+              
+              const fragment = document.createDocumentFragment();
+              if (prefix) fragment.appendChild(document.createTextNode(prefix));
+              
+              const span = document.createElement('span');
+              span.className = 'hidden-lore-block';
+              span.style.cssText = 'display: none !important; opacity: 0 !important; font-size: 0 !important; width: 0 !important; height: 0 !important; clip: rect(0 0 0 0) !important; overflow: hidden !important; position: absolute !important;';
+              span.textContent = lore;
+              fragment.appendChild(span);
+              
+              parent.replaceChild(fragment, target);
+          }
+          // 3. 여러 노드로 쪼개져 닫는 괄호만 뒤에 포함된 경우
+          else if (text.includes('⦘')) {
+              const end = text.indexOf('⦘') + 1;
+              const lore = text.substring(0, end);
+              const suffix = text.substring(end);
+              
+              const fragment = document.createDocumentFragment();
+              
+              const span = document.createElement('span');
+              span.className = 'hidden-lore-block';
+              span.style.cssText = 'display: none !important; opacity: 0 !important; font-size: 0 !important; width: 0 !important; height: 0 !important; clip: rect(0 0 0 0) !important; overflow: hidden !important; position: absolute !important;';
+              span.textContent = lore;
+              fragment.appendChild(span);
+              
+              if (suffix) fragment.appendChild(document.createTextNode(suffix));
+              
+              parent.replaceChild(fragment, target);
           }
       }
   }
