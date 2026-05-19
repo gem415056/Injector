@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.6 (장기 대화 완벽 픽스)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.7 (안정화 및 break 픽스)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.6
-// @description 브릿지 지우개 + 불렛 방지 + 장기 대화(5턴 이상) Deep 구조 탐색 완벽 대응
+// @version     1.8.7
+// @description 브릿지 지우개 + 불렛 방지 + 장기 대화 구조 탐색 개선(break 버그 수정)
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.8.6';
+  const LOADER_VERSION = '1.8.7';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -97,9 +97,6 @@
     } catch(e) {}
   }
 
-  // =====================================================================
-  // [초강력 복구!] 인터셉터 - 장기 대화 딥서치(Deep Search) 적용본
-  // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -109,8 +106,6 @@
 
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
-      // GraphQL 시스템 쿼리문이 오염되는 것을 철저히 차단
-      if (text.trim().startsWith('mutation ') || text.trim().startsWith('query ')) return text;
       try { return await injectFn(text); } catch (e) { return text; }
     }
 
@@ -148,73 +143,60 @@
           if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; }
           else reqUrl = String(args[0] || '');
           const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
-          
           if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
             let bodyText = null;
             if (isReq) { try { bodyText = await args[0].clone().text(); } catch (_) {} }
             else if (args[1] && typeof args[1].body === 'string') bodyText = args[1].body;
-            
             if (bodyText) {
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
                 let injected = false;
                 
-                // 1. 일반 배열 형태 (body.messages)
+                // 1. 일반 메시지 구조 검사
                 if (Array.isArray(body.messages)) {
                   for (let i = body.messages.length - 1; i >= 0; i--) {
                     if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
                       const orig = body.messages[i].content;
                       const mod = await injectText(orig);
-                      if (orig !== mod) { body.messages[i].content = mod; injected = true; break; }
+                      if (orig !== mod) { 
+                        body.messages[i].content = mod; 
+                        injected = true; 
+                        break; // 성공 시에만 break 하도록 안으로 이동
+                      }
                     }
                   }
                 }
                 
-                // 2. 5턴 이후 장기 대화용 배열 형태 (body.variables.messages) - 딥 서치 추가
-                if (!injected && body.variables && Array.isArray(body.variables.messages)) {
-                  for (let i = body.variables.messages.length - 1; i >= 0; i--) {
-                    if (body.variables.messages[i].role === 'user' && typeof body.variables.messages[i].content === 'string') {
-                      const orig = body.variables.messages[i].content;
+                // 2. 단일 프롬프트 구조 검사
+                if (!injected) {
+                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                    if (typeof body[key] === 'string') {
+                      const orig = body[key];
                       const mod = await injectText(orig);
-                      if (orig !== mod) { body.variables.messages[i].content = mod; injected = true; break; }
+                      if (orig !== mod) { 
+                        body[key] = mod; 
+                        injected = true; 
+                        break; // 성공 시에만 break 하도록 안으로 이동
+                      }
+                    }
+                  }
+                }
+                
+                // 3. 5턴 이후 장기 대화용 variables 구조 검사
+                if (!injected && body.variables && typeof body.variables === 'object') {
+                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                    if (typeof body.variables[key] === 'string') {
+                      const orig = body.variables[key];
+                      const mod = await injectText(orig);
+                      if (orig !== mod) { 
+                        body.variables[key] = mod; 
+                        injected = true; 
+                        break; // 성공 시에만 break 하도록 안으로 이동
+                      }
                     }
                   }
                 }
 
-                // 3. 단일 텍스트 형태 전체 뒤지기 (원본 스크립트의 break 버그 완벽 수정)
-                if (!injected) {
-                  const targetKeys = ['content', 'message', 'text', 'prompt', 'query'];
-                  const searchTargets = [body];
-                  
-                  if (body.variables && typeof body.variables === 'object') {
-                      searchTargets.push(body.variables);
-                      // body.variables.input 내부에 텍스트가 들어가는 패턴 대비
-                      if (body.variables.input && typeof body.variables.input === 'object') {
-                          searchTargets.push(body.variables.input);
-                      }
-                  }
-
-                  for (const target of searchTargets) {
-                      if (injected) break;
-                      for (const key of targetKeys) {
-                          if (typeof target[key] === 'string' && target[key].trim().length > 0) {
-                              // 시스템 쿼리문 오염 방지
-                              if (key === 'query' && (target[key].trim().startsWith('mutation') || target[key].trim().startsWith('query'))) continue;
-                              
-                              const orig = target[key];
-                              const mod = await injectText(orig);
-                              // 원본의 최악의 버그: 무조건 break하는 것을 성공했을 때만 break 하도록 수정
-                              if (orig !== mod) { 
-                                  target[key] = mod; 
-                                  injected = true; 
-                                  break; 
-                              }
-                          }
-                      }
-                  }
-                }
-
-                // 성공 시 리패키징 후 요청 전송
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
@@ -233,16 +215,10 @@
         try {
           const injected = await fn(text);
           if (!injected || injected === text) return text;
-          
-          let loreBlock = injected;
-          if (injected.includes(text)) {
-             loreBlock = injected.replace(text, '').trim();
-          } else {
-             loreBlock = injected.trim();
-          }
+          let loreBlock = injected.replace(text, '').trim();
           if (!loreBlock) return text;
           
-          // 불렛 방지 (- 를 ‐ 로 교체)
+          // 불렛 방지
           loreBlock = loreBlock.replace(/^- /gm, '‐ '); 
 
           showLoreToast('✨ 로어 인젝트 완료!', true);
