@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.5 (장기 대화 멈춤 버그 해결)
+// @name        에리의 크랙 로어 인젝터 (Loader) - 1.8.6 (장기 대화 완벽 픽스)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.5
-// @description 브릿지 지우개 + 불렛 방지 + 장기 대화 데이터 구조(body.variables) 복구
+// @version     1.8.6
+// @description 브릿지 지우개 + 불렛 방지 + 장기 대화(5턴 이상) Deep 구조 탐색 완벽 대응
 // @author      로컬AI & 에리
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -24,7 +24,7 @@
   'use strict';
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.8.5';
+  const LOADER_VERSION = '1.8.6';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -72,35 +72,16 @@
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
   L0.moduleStatus = L0.moduleStatus || {};
-  L0.markLoaded = L0.markLoaded || function(name, meta) {
-    L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) };
-    L0['__' + name + 'Loaded'] = true;
-  };
-  L0.markFailed = L0.markFailed || function(name, error, meta) {
-    L0.moduleStatus[name] = {
-      ok: false,
-      time: Date.now(),
-      error: String(error && error.message || error || 'unknown'),
-      ...(meta || {})
-    };
-    L0['__' + name + 'Failed'] = true;
-  };
+  L0.markLoaded = L0.markLoaded || function(name, meta) { L0.moduleStatus[name] = { ok: true, time: Date.now(), ...(meta || {}) }; L0['__' + name + 'Loaded'] = true; };
+  L0.markFailed = L0.markFailed || function(name, error, meta) { L0.moduleStatus[name] = { ok: false, time: Date.now(), error: String(error && error.message || error || 'unknown'), ...(meta || {}) }; L0['__' + name + 'Failed'] = true; };
 
   if (!L0.__menuQueue) {
-    const _mq = [];
-    const _smq = [];
-    L0.__menuQueue = _mq;
-    L0.__subMenuQueue = _smq;
-    L0.registerMenu = function(key, cb) { _mq.push({ key, cb }); };
-    L0.registerSubMenu = function(key, cb) { _smq.push({ key, cb }); };
+    L0.__menuQueue = []; L0.__subMenuQueue = [];
+    L0.registerMenu = function(key, cb) { L0.__menuQueue.push({ key, cb }); };
+    L0.registerSubMenu = function(key, cb) { L0.__subMenuQueue.push({ key, cb }); };
   }
 
-  if (!_w.__LoreInjReady) {
-    let _resolve;
-    const p = new Promise(r => { _resolve = r; });
-    p.__resolve = _resolve;
-    _w.__LoreInjReady = p;
-  }
+  if (!_w.__LoreInjReady) { let _resolve; const p = new Promise(r => { _resolve = r; }); p.__resolve = _resolve; _w.__LoreInjReady = p; }
 
   function showLoreToast(msg, isSuccess) {
     try {
@@ -117,7 +98,7 @@
   }
 
   // =====================================================================
-  // [누락 복구!] 인터셉터 - 장기 대화 데이터(body.variables) 체크 복원
+  // [초강력 복구!] 인터셉터 - 장기 대화 딥서치(Deep Search) 적용본
   // =====================================================================
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
@@ -128,6 +109,8 @@
 
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
+      // GraphQL 시스템 쿼리문이 오염되는 것을 철저히 차단
+      if (text.trim().startsWith('mutation ') || text.trim().startsWith('query ')) return text;
       try { return await injectFn(text); } catch (e) { return text; }
     }
 
@@ -165,51 +148,73 @@
           if (args[0] instanceof Request) { reqUrl = args[0].url; isReq = true; }
           else reqUrl = String(args[0] || '');
           const method = isReq ? args[0].method : ((args[1] || {}).method || 'GET');
+          
           if (String(method).toUpperCase() === 'POST' && reqUrl && (reqUrl.includes('/messages') || reqUrl.includes('/chat') || reqUrl.includes('wrtn.ai'))) {
             let bodyText = null;
             if (isReq) { try { bodyText = await args[0].clone().text(); } catch (_) {} }
             else if (args[1] && typeof args[1].body === 'string') bodyText = args[1].body;
+            
             if (bodyText) {
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
                 let injected = false;
                 
-                // 1. 일반 메시지 구조 검사
+                // 1. 일반 배열 형태 (body.messages)
                 if (Array.isArray(body.messages)) {
                   for (let i = body.messages.length - 1; i >= 0; i--) {
                     if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
                       const orig = body.messages[i].content;
                       const mod = await injectText(orig);
-                      if (orig !== mod) { body.messages[i].content = mod; injected = true; }
-                      break;
+                      if (orig !== mod) { body.messages[i].content = mod; injected = true; break; }
                     }
                   }
                 }
                 
-                // 2. 단일 프롬프트 구조 검사
-                if (!injected) {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body[key] === 'string') {
-                      const orig = body[key];
+                // 2. 5턴 이후 장기 대화용 배열 형태 (body.variables.messages) - 딥 서치 추가
+                if (!injected && body.variables && Array.isArray(body.variables.messages)) {
+                  for (let i = body.variables.messages.length - 1; i >= 0; i--) {
+                    if (body.variables.messages[i].role === 'user' && typeof body.variables.messages[i].content === 'string') {
+                      const orig = body.variables.messages[i].content;
                       const mod = await injectText(orig);
-                      if (orig !== mod) { body[key] = mod; injected = true; }
-                      break;
-                    }
-                  }
-                }
-                
-                // 3. [복원됨!] 5턴 이후 장기 대화용 variables 구조 검사
-                if (!injected && body.variables && typeof body.variables === 'object') {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body.variables[key] === 'string') {
-                      const orig = body.variables[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body.variables[key] = mod; injected = true; }
-                      break;
+                      if (orig !== mod) { body.variables.messages[i].content = mod; injected = true; break; }
                     }
                   }
                 }
 
+                // 3. 단일 텍스트 형태 전체 뒤지기 (원본 스크립트의 break 버그 완벽 수정)
+                if (!injected) {
+                  const targetKeys = ['content', 'message', 'text', 'prompt', 'query'];
+                  const searchTargets = [body];
+                  
+                  if (body.variables && typeof body.variables === 'object') {
+                      searchTargets.push(body.variables);
+                      // body.variables.input 내부에 텍스트가 들어가는 패턴 대비
+                      if (body.variables.input && typeof body.variables.input === 'object') {
+                          searchTargets.push(body.variables.input);
+                      }
+                  }
+
+                  for (const target of searchTargets) {
+                      if (injected) break;
+                      for (const key of targetKeys) {
+                          if (typeof target[key] === 'string' && target[key].trim().length > 0) {
+                              // 시스템 쿼리문 오염 방지
+                              if (key === 'query' && (target[key].trim().startsWith('mutation') || target[key].trim().startsWith('query'))) continue;
+                              
+                              const orig = target[key];
+                              const mod = await injectText(orig);
+                              // 원본의 최악의 버그: 무조건 break하는 것을 성공했을 때만 break 하도록 수정
+                              if (orig !== mod) { 
+                                  target[key] = mod; 
+                                  injected = true; 
+                                  break; 
+                              }
+                          }
+                      }
+                  }
+                }
+
+                // 성공 시 리패키징 후 요청 전송
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
@@ -228,10 +233,16 @@
         try {
           const injected = await fn(text);
           if (!injected || injected === text) return text;
-          let loreBlock = injected.replace(text, '').trim();
+          
+          let loreBlock = injected;
+          if (injected.includes(text)) {
+             loreBlock = injected.replace(text, '').trim();
+          } else {
+             loreBlock = injected.trim();
+          }
           if (!loreBlock) return text;
           
-          // 불렛 방지
+          // 불렛 방지 (- 를 ‐ 로 교체)
           loreBlock = loreBlock.replace(/^- /gm, '‐ '); 
 
           showLoreToast('✨ 로어 인젝트 완료!', true);
@@ -248,41 +259,17 @@
 
   installEarlyInterceptor();
 
-  function isChatPath(path = location.pathname) {
-    return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path)
-      || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path)
-      || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path);
-  }
-
-  function isHomePath(path = location.pathname) {
-    return path === '/' || path === '';
-  }
-
-  function updateRoute() {
-    L0.route = {
-      isChat: isChatPath(),
-      isHome: isHomePath(),
-      path: location.pathname,
-      href: location.href
-    };
-  }
+  function isChatPath(path = location.pathname) { return /\/characters\/[a-f0-9]+\/chats\/[a-f0-9]+/.test(path) || /\/stories\/[a-f0-9]+\/episodes\/[a-f0-9]+/.test(path) || /\/u\/[a-f0-9]+\/c\/[a-f0-9]+/.test(path); }
+  function isHomePath(path = location.pathname) { return path === '/' || path === ''; }
+  function updateRoute() { L0.route = { isChat: isChatPath(), isHome: isHomePath(), path: location.pathname, href: location.href }; }
 
   function onRouteChange(cb) {
     let last = location.href;
-    const fire = () => {
-      if (last === location.href) return;
-      last = location.href;
-      updateRoute();
-      try { cb(); } catch (e) { console.warn('[LoreInj] routechange callback 실패:', e); }
-    };
+    const fire = () => { if (last === location.href) return; last = location.href; updateRoute(); try { cb(); } catch (e) {} };
     const patchHistory = (name) => {
       const orig = history[name];
       if (!orig || orig.__lorePatched) return;
-      history[name] = function() {
-        const ret = orig.apply(this, arguments);
-        setTimeout(fire, 0);
-        return ret;
-      };
+      history[name] = function() { const ret = orig.apply(this, arguments); setTimeout(fire, 0); return ret; };
       history[name].__lorePatched = true;
     };
     try { patchHistory('pushState'); patchHistory('replaceState'); } catch (_) {}
@@ -291,20 +278,7 @@
     try { window.addEventListener('hashchange', fire); } catch (_) {}
   }
 
-  Object.assign(L0, {
-    isChatPath,
-    isHomePath,
-    onRouteChange,
-    runWhenChatRoute(init) {
-      if (isChatPath()) return init();
-      let started = false;
-      onRouteChange(() => {
-        if (started || !isChatPath()) return;
-        started = true;
-        init();
-      });
-    }
-  });
+  Object.assign(L0, { isChatPath, isHomePath, onRouteChange, runWhenChatRoute(init) { if (isChatPath()) return init(); let started = false; onRouteChange(() => { if (started || !isChatPath()) return; started = true; init(); }); }});
   updateRoute();
 
   function showLoaderBadge(text, color = '#4a9') {
@@ -324,10 +298,7 @@
   }
 
   function hideLoaderBadge() {
-    try {
-      const el = document.getElementById('lore-lite-loader-badge');
-      if (el) el.remove();
-    } catch (_) {}
+    try { const el = document.getElementById('lore-lite-loader-badge'); if (el) el.remove(); } catch (_) {}
   }
 
   async function fetchText(url) {
@@ -361,7 +332,6 @@
       if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
       if (missingCore.length === 0 && missingSubs.length === 0) {
         L.allReady = true;
-        console.log('[LoreInj v' + (L.VER || LOADER_VERSION) + '] 게이트 통과: 전체 모듈 로드');
         settle({ ok: true, ver: L.VER || LOADER_VERSION });
         hideLoaderBadge();
         return;
@@ -370,14 +340,12 @@
         L.allReady = true;
         L.partialReady = true;
         L.missingSubs = missingSubs;
-        console.warn('[LoreInj] 서브모듈 일부 미로드 — partial gate:', missingSubs);
         settle({ ok: true, ver: L.VER || LOADER_VERSION, partial: true, missingSubs, moduleStatus: L.moduleStatus || {} });
         hideLoaderBadge();
         return;
       }
       if (Date.now() < gateDeadline) return setTimeout(check, POLL_MS);
       const missing = requiredAll.filter(k => !L[k]);
-      console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
       settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
       showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
     };
@@ -401,20 +369,12 @@
       startReadyGate();
     } catch (e) {
       L0.__dynamicLoadError = String(e && e.message || e);
-      console.error('[LoreInj] 동적 로드 실패:', e);
       showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
       try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
     }
   }
 
-  if (isChatPath()) {
-    loadHeavyModules();
-  } else {
-    console.log('[LoreInj loader ' + LOADER_VERSION + '] non-chat route: heavy modules deferred', location.pathname);
-    onRouteChange(() => {
-      if (isChatPath()) loadHeavyModules();
-    });
-  }
+  if (isChatPath()) { loadHeavyModules(); } else { onRouteChange(() => { if (isChatPath()) loadHeavyModules(); }); }
 
   // [투명화] 브릿지 지우개 
   function eraseLoreSafely() {
