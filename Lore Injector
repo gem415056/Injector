@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.6.1
+// @version     1.6.2
 // @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -580,8 +580,8 @@
 
         for (const el of btns) {
           const txt = el.textContent ? el.textContent.trim() : '';
-          // 프록시 버튼 자체를 매칭에서 배제하고, 원본 Chasm Tools 버튼만 선별
-          if (txt.includes('Chasm Tools') && !el.dataset.chasmIsProxy) {
+          // 글자 수가 25자 미만인 엘리먼트만 검사하여 대형 레이아웃 div 매칭 오작동 방지
+          if (txt.includes('Chasm Tools') && txt.length < 25 && !el.dataset.chasmIsProxy) {
             originalChasmBtn = el;
             break;
           }
