@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.4
+// @version     1.5.5
 // @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -102,7 +102,7 @@
     _w.__LoreInjReady = p;
   }
 
-  // --- 화면 중앙 컴팩트 토스트 알림 기능 구현 (메인 스레드 보호) ---
+  // --- 화면 중앙 컴팩트 토스트 알림 기능 구현 (메인 스레드 보호 및 위치 상향 조정) ---
   function showCenterToast(message, isSuccess) {
     setTimeout(() => {
       try {
@@ -115,10 +115,10 @@
         const toast = document.createElement('div');
         toast.id = 'lore-center-toast';
         
-        // 두께와 세로 폭을 조절하고 모서리 라운드를 정교하게 다듬은 CSS 스타일
+        // 정중앙 기준보다 30px 위로 조정된 CSS 배치 스타일
         toast.style.cssText = `
           position: fixed;
-          top: 50%;
+          top: calc(50% - 30px);
           left: 50%;
           transform: translate(-50%, -50%);
           z-index: 2147483647;
@@ -184,15 +184,21 @@
   // --- 대화 내역 로어 숨김 처리 로직 (방안 B - 클래스 주입형 및 루프 예방) ---
   function hideLoreInElement(el) {
     try {
-      // 이미 스캔이 끝난 요소는 다시 감시하지 않고 즉시 스킵 (무한 렌더링 루프 방지)
-      if (el.dataset.loreProcessed) return;
-
       // Tiptap 에디터 및 입력 필드 내부의 엘리먼트인 경우 숨김을 건너뜀 (수정창 복구용)
       if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
         return;
       }
 
-      // 탐색 마크 기록
+      // [선행 필터] 요소 내부에 로어 지시어가 포함되어 있는지 텍스트 검사를 먼저 실행 (DOM 변형 없음)
+      const html = el.innerHTML || '';
+      if (!html.includes('[System:') && !html.includes('System: Established world')) {
+        return; // 일반 AI 대화 및 무관한 요소는 단 한 번의 속성 변형도 가하지 않고 완전히 패스
+      }
+
+      // 이미 스캔이 끝난 요소는 다시 감시하지 않고 즉시 스킵 (무한 렌더링 루프 및 AI 스트리밍 간섭 방지)
+      if (el.dataset.loreProcessed) return;
+
+      // 탐색 마크 기록 (로어가 존재하는 유저 메시지 창에만 기록됨)
       el.dataset.loreProcessed = "true";
 
       const childNodes = Array.from(el.children);
