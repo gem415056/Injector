@@ -584,17 +584,18 @@
 
         for (const el of btns) {
           const txt = el.textContent ? el.textContent.trim() : '';
-          if (txt === 'Chasm Tools' && !el.dataset.chasmTransformed) {
+          // 이모지 포함 여부와 무관하게 Chasm Tools 텍스트가 포함되어 있으면 매칭
+          if (txt.includes('Chasm Tools') && !el.dataset.chasmTransformed) {
             chasmBtn = el;
           }
-          if ((txt.includes('요약') || txt === '♥') && el !== chasmBtn && !el.textContent.includes('Chasm')) {
+          if ((txt.includes('요약') || txt === '♥' || txt === '♡') && el !== chasmBtn && !el.textContent.includes('Chasm')) {
             targetNextBtn = el;
           }
         }
 
         if (chasmBtn) {
           chasmBtn.dataset.chasmTransformed = 'true';
-          chasmBtn.innerHTML = '♥';
+          chasmBtn.innerHTML = '♡';
           chasmBtn.className = '';
           chasmBtn.classList.add('chasm-heart-btn');
           chasmBtn.title = 'Chasm Tools';
