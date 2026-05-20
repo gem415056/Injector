@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.0
-// @description 모듈화된 로어 인젝터 로더
+// @version     1.5.1
+// @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -102,6 +102,141 @@
     _w.__LoreInjReady = p;
   }
 
+  // --- 화면 중앙 토스트 알림 기능 구현 ---
+  function showCenterToast(message, isSuccess) {
+    try {
+      const mount = document.body || document.documentElement;
+      if (!mount) return;
+      
+      const oldToast = document.getElementById('lore-center-toast');
+      if (oldToast) oldToast.remove();
+
+      const toast = document.createElement('div');
+      toast.id = 'lore-center-toast';
+      
+      // 기존 우하단 알림과 유사한 다크 테마/라운드 스타일 및 정중앙 배치 CSS
+      toast.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 2147483647;
+        background: rgba(26, 26, 26, 0.95);
+        border: 1px solid ${isSuccess ? '#4a9' : '#d66'};
+        border-radius: 20px;
+        padding: 12px 24px;
+        font-size: 14px;
+        font-weight: 500;
+        color: ${isSuccess ? '#eefffa' : '#ffebeb'};
+        box-shadow: 0 8px 24px rgba(0,0,0,.6);
+        font-family: inherit;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        opacity: 0;
+      `;
+      
+      toast.textContent = message;
+      mount.appendChild(toast);
+
+      // 페이드인 효과
+      requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translate(-50%, -50%) scale(1.05)';
+        setTimeout(() => {
+          toast.style.transform = 'translate(-50%, -50%) scale(1)';
+        }, 100);
+      });
+
+      // 2.5초 후 제거
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translate(-50%, -50%) scale(0.95)';
+        setTimeout(() => toast.remove(), 200);
+      }, 2500);
+    } catch (e) {
+      console.warn('[LoreInj] 토스트 출력 실패:', e);
+    }
+  }
+
+  // --- 대화 내역 로어 숨김 처리 로직 (방안 B) ---
+  function hideLoreInElement(el) {
+    try {
+      // Tiptap 에디터(.ProseMirror) 및 입력 필드 내부의 엘리먼트인 경우 숨김을 건너뜀 (수정창에서 보이도록 보장)
+      if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
+        return;
+      }
+
+      const childNodes = Array.from(el.children);
+      let isInsideSystem = false;
+      const targets = [];
+
+      for (const child of childNodes) {
+        const text = child.textContent || '';
+        
+        // [System: 설정 블록의 시작 감지
+        if (text.includes('[System:') || text.includes('System: Established world')) {
+          isInsideSystem = true;
+        }
+
+        if (isInsideSystem) {
+          targets.push(child);
+        }
+
+        // [/System] 또는 시스템 마크업 종료 감지
+        if (text.includes('[/System]') || text.includes('[/System]‌')) {
+          isInsideSystem = false;
+        }
+      }
+
+      // 수집된 시스템 블록 요소들을 화면에서 숨김 처리
+      if (targets.length > 0) {
+        targets.forEach(node => {
+          node.style.display = 'none';
+        });
+      }
+    } catch (e) {
+      console.warn('[LoreInj] 로어 노드 숨김 처리 중 오류:', e);
+    }
+  }
+
+  // --- 실시간 렌더링 감시 옵저버 구성 (타이핑 렉 방지) ---
+  function initLoreHiderObserver() {
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.classList && node.classList.contains('wrtn-markdown')) {
+              hideLoreInElement(node);
+            } else {
+              const items = node.querySelectorAll('.wrtn-markdown');
+              for (let i = 0; i < items.length; i++) {
+                hideLoreInElement(items[i]);
+              }
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    // 초기 로딩 시점에 이미 존재하는 요소 처리
+    const existing = document.querySelectorAll('.wrtn-markdown');
+    for (let i = 0; i < existing.length; i++) {
+      hideLoreInElement(existing[i]);
+    }
+  }
+
+  // 초기화 함수 실행
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLoreHiderObserver);
+  } else {
+    initLoreHiderObserver();
+  }
+
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -113,6 +248,7 @@
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
       try { return await injectFn(text); } catch (e) {
         console.error('[Lore] early inject err:', e);
+        showCenterToast('로어 인젝트 오류', false);
         return text;
       }
     }
@@ -128,11 +264,17 @@
             if (Array.isArray(arr) && arr[0] === 'send' && arr[1] && typeof arr[1].message === 'string' && arr[1].message.length > 0) {
               const orig = arr[1].message;
               (async () => {
-                const mod = await injectText(orig);
-                if (orig !== mod) {
-                  arr[1].message = mod;
-                  origWsSend.call(ws, prefix + JSON.stringify(arr));
-                } else {
+                try {
+                  const mod = await injectText(orig);
+                  if (orig !== mod) {
+                    arr[1].message = mod;
+                    origWsSend.call(ws, prefix + JSON.stringify(arr));
+                    showCenterToast('로어 인젝트 완료', true);
+                  } else {
+                    origWsSend.call(ws, data);
+                  }
+                } catch (err) {
+                  showCenterToast('로어 인젝트 오류', false);
                   origWsSend.call(ws, data);
                 }
               })();
@@ -193,6 +335,7 @@
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
                   else { args[1] = args[1] || {}; args[1].body = newBodyText; }
+                  showCenterToast('로어 인젝트 완료', true);
                 }
               }
             }
@@ -200,6 +343,7 @@
         }
       } catch (e) {
         console.error('[Lore] early fetch hook err:', e);
+        showCenterToast('로어 인젝트 오류', false);
       }
       return origFetch.apply(this, args);
     };
