@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.2
+// @version     1.5.3
 // @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -159,22 +159,41 @@
     }, 0);
   }
 
-  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 ---
+  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 (추출 엔진 호환형) ---
   try {
     const style = document.createElement('style');
-    style.textContent = '.erie-hidden-lore { display: none !important; }';
+    style.textContent = `
+      .erie-hidden-lore {
+        opacity: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        pointer-events: none !important;
+        position: absolute !important;
+      }
+    `;
     (document.head || document.documentElement).appendChild(style);
   } catch (e) {
     console.warn('[LoreInj] 스타일 시트 주입 실패:', e);
   }
 
-  // --- 대화 내역 로어 숨김 처리 로직 (방안 B - 클래스 주입형) ---
+  // --- 대화 내역 로어 숨김 처리 로직 (방안 B - 클래스 주입형 및 루프 예방) ---
   function hideLoreInElement(el) {
     try {
-      // Tiptap 에디터(.ProseMirror) 및 입력 창 영역 내부일 경우 건너뜀 (수정 화면에서의 복구 보장)
+      // 이미 스캔이 끝난 요소는 다시 감시하지 않고 즉시 스킵 (무한 렌더링 루프 방지)
+      if (el.dataset.loreProcessed) return;
+
+      // Tiptap 에디터 및 입력 필드 내부의 엘리먼트인 경우 숨김을 건너뜀 (수정창 복구용)
       if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
         return;
       }
+
+      // 탐색 마크 기록
+      el.dataset.loreProcessed = "true";
 
       const childNodes = Array.from(el.children);
       let isInsideSystem = false;
@@ -472,6 +491,7 @@
       updateRoute();
       const missingCore = requiredCore.filter(k => !L[k]);
       const missingSubs = requiredSubs.filter(k => !L[k]);
+      if (missingCore.length === 0 && !L.__gateCoreReadyAt = Date.now()); // Fixed typo
       if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
       if (missingCore.length === 0 && missingSubs.length === 0) {
         L.allReady = true;
@@ -563,6 +583,7 @@
           background: #2d2d2d !important;
           border-color: #3f3f46 !important;
           color: #d4d4d8 !important;
+          border: 1px solid #3f3f46 !important;
         }
         html[data-theme="dark"] .chasm-heart-btn:hover,
         html.dark .chasm-heart-btn:hover,
