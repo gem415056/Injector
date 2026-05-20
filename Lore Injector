@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.3
+// @version     1.5.4
 // @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -491,7 +491,6 @@
       updateRoute();
       const missingCore = requiredCore.filter(k => !L[k]);
       const missingSubs = requiredSubs.filter(k => !L[k]);
-      if (missingCore.length === 0 && !L.__gateCoreReadyAt = Date.now()); // Fixed typo
       if (missingCore.length === 0 && !L.__gateCoreReadyAt) L.__gateCoreReadyAt = Date.now();
       if (missingCore.length === 0 && missingSubs.length === 0) {
         L.allReady = true;
