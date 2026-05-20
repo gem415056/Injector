@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.8
+// @version     1.5.9
 // @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -159,20 +159,21 @@
     }, 0);
   }
 
-  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 (추출 엔진 innerText와 완벽히 호환되는 마이크로 스타일) ---
+  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 (1.5.6 버전의 완벽한 0px 가림막 스타일로 원복) ---
   try {
     const style = document.createElement('style');
     style.textContent = `
       .erie-hidden-lore {
-        color: transparent !important;
-        font-size: 0.001px !important;
-        line-height: 0px !important;
+        opacity: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
         margin: 0 !important;
         padding: 0 !important;
         border: none !important;
         pointer-events: none !important;
-        user-select: none !important;
-        display: inline-block !important;
+        position: absolute !important;
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -180,48 +181,46 @@
     console.warn('[LoreInj] 스타일 시트 주입 실패:', e);
   }
 
-  // --- AI 답변 생성 여부를 실시간으로 정밀 조회하는 헬퍼 함수 ---
+  // --- AI 답변 생성 여부를 실시간으로 조회하는 헬퍼 함수 ---
   function isWrtnStreaming() {
     try {
       const textarea = document.querySelector('.__chat_input_textarea');
       if (textarea) {
-        // 전송창 주변 레이아웃 영역 획득
         const inputArea = textarea.closest('.bg-background') || textarea.closest('.flex-col');
         if (inputArea) {
-          // 전송 중이거나 로딩 중일 때 비활성화(disabled)되는 버튼의 존재 체크
           const disabledBtn = inputArea.querySelector('button[disabled]') || inputArea.querySelector('button[class*="disabled"]');
-          if (disabledBtn) return true; // AI 답변이 출력되는 중이므로 True 반환
+          if (disabledBtn) return true;
         }
       }
     } catch (_) {}
     return false;
   }
 
-  // --- 가볍고 성능 부하가 없는 주기적 로어 투명화 엔진 (AI 대답 중 정지 제어 적용) ---
+  // --- 가볍고 성능 부하가 없는 주기적 로어 투명화 엔진 (오직 타이머로만 구동) ---
   function runLoreHidingScan() {
     try {
-      // [치명적인 충돌 예방] AI가 답변을 작성 중인 상황이라면 화면 스캔을 즉시 정지하고 대기
+      // AI가 열심히 답변을 타자 치고 있는 상황이라면 안전을 위해 스캔 스케줄러 자체를 일시 중지
       if (isWrtnStreaming()) return;
 
-      // 아직 스캔 마크가 새겨지지 않은 마크다운 요소만 타겟팅 (성능 확보)
+      // 아직 스캔 처리가 이루어지지 않은 메시지 영역만 수집
       const markdowns = document.querySelectorAll('.wrtn-markdown:not([data-lore-processed="true"])');
       if (markdowns.length === 0) return;
 
       for (let i = 0; i < markdowns.length; i++) {
         const el = markdowns[i];
 
-        // 에디터 활성화 상태 또는 텍스트 입력 칸 내부 요소는 안전하게 건너뜀
+        // 에디터 활성화 상태 또는 텍스트 입력 칸 내부 요소는 건너뜀
         if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
           continue;
         }
 
-        // 로어 블록 존재 여부를 텍스트로 미리 조회 (DOM 충돌 방지)
+        // [선행 읽기 필터] 실제 로어가 포함되어 있는지 텍스트 검사를 선행 실행 (속성 변형 방지)
         const text = el.textContent || '';
         if (!text.includes('[System:') && !text.includes('System: Established world')) {
-          continue;
+          continue; // AI 메시지 및 무관한 유저 메시지는 단 하나의 표식도 남기지 않고 즉시 리턴
         }
 
-        // 스캔 처리 마크 등록 (동일 타겟 중복연산 방지)
+        // 스캔 처리 마크 등록 (타겟 유저 메시지에만 작동)
         el.dataset.loreProcessed = "true";
 
         const childNodes = Array.from(el.children);
@@ -255,7 +254,7 @@
     }
   }
 
-  // CPU를 점유하지 않는 1.5초 주기 감시 스케줄러 등록 (AI 동작 중에는 자동으로 가동을 멈춤)
+  // CPU를 점유하지 않고 타이핑 렉이 전혀 없는 1.5초 주기 감시 스케줄러 등록
   setInterval(runLoreHidingScan, 1500);
 
   // 채팅방 로딩 및 전환 감지 시 즉시 일회성 스캔 적용
