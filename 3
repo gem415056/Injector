@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.0
+// @version     1.5.1
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -262,7 +262,6 @@
   function eraseLoreSafely() {
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
       let node;
-      const targets = [];
       const hiddenBlocks = _w.__loreHiddenBlocks;
       
       if (!hiddenBlocks || hiddenBlocks.size === 0) return;
@@ -280,12 +279,17 @@
               const cn = typeof parent.className === 'string' ? parent.className.toLowerCase() : '';
               const id = typeof parent.id === 'string' ? parent.id.toLowerCase() : '';
               
+              // 완벽한 보호막: 모든 모달, 오버레이, 토스트, 확장기능 UI 영역 보호 (텍스트 삭제 크래시 원천 차단)
               if (cn.includes('prosemirror') || cn.includes('tiptap') || 
-                  cn.includes('lore') || cn.includes('refiner') || cn.includes('injecter') || cn.includes('chasm') || cn.includes('decentralized')) {
+                  cn.includes('lore') || cn.includes('refiner') || cn.includes('injecter') || 
+                  cn.includes('chasm') || cn.includes('decentralized') || cn.includes('crack-ext') ||
+                  cn.includes('modal') || cn.includes('overlay') || cn.includes('toast')) {
                   skipNode = true;
                   break;
               }
-              if (id.includes('lore') || id.includes('refiner') || id.includes('injecter') || id.includes('chasm') || id.includes('decentralized')) {
+              if (id.includes('lore') || id.includes('refiner') || id.includes('injecter') || 
+                  id.includes('chasm') || id.includes('decentralized') || id.includes('crack-ext') ||
+                  id.includes('modal') || id.includes('overlay') || id.includes('toast')) {
                   skipNode = true;
                   break;
               }
@@ -294,48 +298,16 @@
           
           if (skipNode) continue;
 
-          if (node.parentNode && node.parentNode.classList && node.parentNode.classList.contains('hidden-lore-block')) {
-              continue;
-          }
-
-          // 메모리에 가림막으로 지정된 로어 문자열이 화면(DOM)에 렌더링되었는지 대조
+          // 직접 nodeValue를 공백으로 밀어버려 React 렌더러와 충돌하지 않도록 조치
           const val = node.nodeValue;
           if (val) {
               for (let block of hiddenBlocks) {
                   if (val.includes(block)) {
-                      targets.push({ node, block });
+                      node.nodeValue = val.replace(block, "");
                       break;
                   }
               }
           }
-      }
-      
-      // 감지된 로어 텍스트 노드를 실시간 투명 레이어(span) 처리
-      for (let i = 0; i < targets.length; i++) {
-          const { node: targetNode, block } = targets[i];
-          const text = targetNode.nodeValue;
-          const parent = targetNode.parentNode;
-          if (!parent) continue;
-          
-          const start = text.indexOf(block);
-          const end = start + block.length;
-          
-          const prefix = text.substring(0, start);
-          const lore = text.substring(start, end);
-          const suffix = text.substring(end);
-          
-          const fragment = document.createDocumentFragment();
-          if (prefix) fragment.appendChild(document.createTextNode(prefix));
-          
-          const span = document.createElement('span');
-          span.className = 'hidden-lore-block';
-          span.style.cssText = 'display: none !important; opacity: 0 !important; font-size: 0 !important; width: 0 !important; height: 0 !important; clip: rect(0 0 0 0) !important; overflow: hidden !important; position: absolute !important;';
-          span.textContent = lore;
-          fragment.appendChild(span);
-          
-          if (suffix) fragment.appendChild(document.createTextNode(suffix));
-          
-          parent.replaceChild(fragment, targetNode);
       }
   }
   setInterval(eraseLoreSafely, 1000);
