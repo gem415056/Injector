@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.5.5
+// @version     1.5.6
 // @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -102,7 +102,7 @@
     _w.__LoreInjReady = p;
   }
 
-  // --- 화면 중앙 컴팩트 토스트 알림 기능 구현 (메인 스레드 보호 및 위치 상향 조정) ---
+  // --- 화면 중앙 컴팩트 토스트 알림 기능 구현 (위치 추가 30px 조정) ---
   function showCenterToast(message, isSuccess) {
     setTimeout(() => {
       try {
@@ -115,7 +115,7 @@
         const toast = document.createElement('div');
         toast.id = 'lore-center-toast';
         
-        // 정중앙 기준보다 30px 위로 조정된 CSS 배치 스타일
+        // 정중앙 기준에서 정확히 30px 위로 올린 위치값 조정
         toast.style.cssText = `
           position: fixed;
           top: calc(50% - 30px);
@@ -159,7 +159,7 @@
     }, 0);
   }
 
-  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 (추출 엔진 호환형) ---
+  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 (추출 엔진 100% 호환) ---
   try {
     const style = document.createElement('style');
     style.textContent = `
@@ -181,92 +181,69 @@
     console.warn('[LoreInj] 스타일 시트 주입 실패:', e);
   }
 
-  // --- 대화 내역 로어 숨김 처리 로직 (방안 B - 클래스 주입형 및 루프 예방) ---
-  function hideLoreInElement(el) {
+  // --- 가볍고 성능 부하가 없는 주기적 로어 투명화 엔진 (지연 처리식) ---
+  function runLoreHidingScan() {
     try {
-      // Tiptap 에디터 및 입력 필드 내부의 엘리먼트인 경우 숨김을 건너뜀 (수정창 복구용)
-      if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
-        return;
-      }
+      // 아직 스캔 마크가 새겨지지 않은 마크다운 요소만 타겟팅 (성능 확보)
+      const markdowns = document.querySelectorAll('.wrtn-markdown:not([data-lore-processed="true"])');
+      if (markdowns.length === 0) return;
 
-      // [선행 필터] 요소 내부에 로어 지시어가 포함되어 있는지 텍스트 검사를 먼저 실행 (DOM 변형 없음)
-      const html = el.innerHTML || '';
-      if (!html.includes('[System:') && !html.includes('System: Established world')) {
-        return; // 일반 AI 대화 및 무관한 요소는 단 한 번의 속성 변형도 가하지 않고 완전히 패스
-      }
+      for (let i = 0; i < markdowns.length; i++) {
+        const el = markdowns[i];
 
-      // 이미 스캔이 끝난 요소는 다시 감시하지 않고 즉시 스킵 (무한 렌더링 루프 및 AI 스트리밍 간섭 방지)
-      if (el.dataset.loreProcessed) return;
-
-      // 탐색 마크 기록 (로어가 존재하는 유저 메시지 창에만 기록됨)
-      el.dataset.loreProcessed = "true";
-
-      const childNodes = Array.from(el.children);
-      let isInsideSystem = false;
-      const targets = [];
-
-      for (const child of childNodes) {
-        const text = child.textContent || '';
-        
-        if (text.includes('[System:') || text.includes('System: Established world')) {
-          isInsideSystem = true;
+        // 에디터 활성화 상태 또는 텍스트 입력 칸 내부 요소는 안전하게 건너뜀
+        if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
+          continue;
         }
 
-        if (isInsideSystem) {
-          targets.push(child);
+        // 로어 블록 존재 여부를 텍스트로 미리 조회 (DOM 충돌 방지)
+        const text = el.textContent || '';
+        if (!text.includes('[System:') && !text.includes('System: Established world')) {
+          continue;
         }
 
-        if (text.includes('[/System]') || text.includes('[/System]‌')) {
-          isInsideSystem = false;
-        }
-      }
+        // 스캔 처리 마크 등록 (동일 타겟 중복연산 방지)
+        el.dataset.loreProcessed = "true";
 
-      if (targets.length > 0) {
-        targets.forEach(node => {
-          node.classList.add('erie-hidden-lore');
-        });
-      }
-    } catch (e) {
-      console.warn('[LoreInj] 로어 노드 숨김 처리 중 오류:', e);
-    }
-  }
+        const childNodes = Array.from(el.children);
+        let isInsideSystem = false;
+        const targets = [];
 
-  // --- 실시간 렌더링 감시 옵저버 구성 (타이핑 렉 원천 차단) ---
-  function initLoreHiderObserver() {
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            if (node.classList && node.classList.contains('wrtn-markdown')) {
-              hideLoreInElement(node);
-            } else {
-              const items = node.querySelectorAll('.wrtn-markdown');
-              for (let i = 0; i < items.length; i++) {
-                hideLoreInElement(items[i]);
-              }
-            }
+        for (const child of childNodes) {
+          const childText = child.textContent || '';
+          
+          if (childText.includes('[System:') || childText.includes('System: Established world')) {
+            isInsideSystem = true;
+          }
+
+          if (isInsideSystem) {
+            targets.push(child);
+          }
+
+          if (childText.includes('[/System]') || childText.includes('[/System]‌')) {
+            isInsideSystem = false;
           }
         }
+
+        if (targets.length > 0) {
+          targets.forEach(node => {
+            node.classList.add('erie-hidden-lore');
+          });
+        }
       }
-    });
-
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true
-    });
-
-    // 초기 실행 처리
-    const existing = document.querySelectorAll('.wrtn-markdown');
-    for (let i = 0; i < existing.length; i++) {
-      hideLoreInElement(existing[i]);
+    } catch (e) {
+      console.warn('[LoreInj] 주기적 로어 스캔 중 오류:', e);
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initLoreHiderObserver);
-  } else {
-    initLoreHiderObserver();
-  }
+  // 초정밀 실시간 감시기 대신, CPU를 점유하지 않는 1.5초 주기 감시 스케줄러 등록
+  setInterval(runLoreHidingScan, 1500);
+
+  // 채팅방 로딩 및 전환 감지 시 즉시 일회성 스캔 적용
+  onRouteChange(() => {
+    setTimeout(runLoreHidingScan, 200);
+    setTimeout(runLoreHidingScan, 800);
+  });
 
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
