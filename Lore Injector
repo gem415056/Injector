@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.6.2
-// @description 모듈화된 로어 인젝터 로더 (화면 숨김 및 중앙 토스트 기능 추가)
+// @version     1.6.3
+// @description 모듈화된 로어 인젝터 로더 (하단 툴바 3선 배치 최적화 버전)
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -534,45 +534,6 @@
 
   // --- Chasm Tools 하트 버튼 스타일 및 자동 정렬 처리 코드 ---
   function initHeartButtonChanger() {
-    if (typeof GM_addStyle !== 'undefined') {
-      GM_addStyle(`
-        .chasm-heart-btn {
-          display: inline-flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-          width: 36px !important;
-          height: 36px !important;
-          border-radius: 6px !important;
-          background: transparent !important;
-          color: #555 !important;
-          font-size: 16px !important;
-          border: 1px solid #E6E6E6 !important;
-          cursor: pointer !important;
-          transition: 0.2s !important;
-          margin-right: -8px !important;
-          z-index: 10 !important;
-          box-sizing: border-box !important;
-          padding: 0 !important;
-        }
-        .chasm-heart-btn:hover {
-          background: #f5f5f5 !important;
-        }
-        html[data-theme="dark"] .chasm-heart-btn,
-        html.dark .chasm-heart-btn,
-        body.dark .chasm-heart-btn,
-        body[data-theme="dark"] .chasm-heart-btn {
-          border-color: #42413D !important;
-          color: #F0EFEB !important;
-        }
-        html[data-theme="dark"] .chasm-heart-btn:hover,
-        html.dark .chasm-heart-btn:hover,
-        body.dark .chasm-heart-btn:hover,
-        body[data-theme="dark"] .chasm-heart-btn:hover {
-          background: #333 !important;
-        }
-      `);
-    }
-
     function applyTransformation() {
       try {
         const btns = Array.from(document.querySelectorAll('button, div, span, a'));
@@ -580,10 +541,12 @@
 
         for (const el of btns) {
           const txt = el.textContent ? el.textContent.trim() : '';
-          // 글자 수가 25자 미만인 엘리먼트만 검사하여 대형 레이아웃 div 매칭 오작동 방지
-          if (txt.includes('Chasm Tools') && txt.length < 25 && !el.dataset.chasmIsProxy) {
-            originalChasmBtn = el;
-            break;
+          // 유저 요청 사항: '🔥' 이모지 혹은 'Chasm Tools' 어구 매칭으로 안정성 확보
+          if ((txt.includes('🔥') || txt.includes('Chasm Tools')) && !el.dataset.chasmIsProxy) {
+            if (el.tagName === 'BUTTON' || (el.tagName === 'DIV' && txt.length < 30)) {
+              originalChasmBtn = el;
+              break;
+            }
           }
         }
 
@@ -600,37 +563,34 @@
           originalChasmBtn.style.setProperty('border', 'none', 'important');
           originalChasmBtn.style.setProperty('z-index', '-9999', 'important');
 
-          const headerContainer = document.querySelector('.absolute.z-\\[5\\] .flex.gap-3.items-center');
+          const headerContainer = document.getElementById('custom-rp-tools');
           if (headerContainer) {
-            let proxyBtn = document.getElementById('chasm-heart-proxy-btn');
-            if (!proxyBtn) {
-              proxyBtn = document.createElement('button');
-              proxyBtn.id = 'chasm-heart-proxy-btn';
-              proxyBtn.className = 'chasm-heart-btn';
-              proxyBtn.dataset.chasmIsProxy = 'true';
-              proxyBtn.innerHTML = '♡';
-              proxyBtn.title = 'Chasm Tools';
+            const divs = Array.from(headerContainer.children);
+            // 8in1 툴바 내부의 28px 크기 빈공간(Spacer)들을 찾습니다.
+            const spacers = divs.filter(el => el.tagName === 'DIV' && el.style.width === '28px' && !el.classList.contains('custom-rp-divider'));
+            
+            // 세 번째 빈자리(index 2)가 확보된 경우에 프록시 버튼 주입을 시작합니다.
+            if (spacers.length >= 3) {
+              const targetContainer = spacers[2];
+              let proxyBtn = document.getElementById('chasm-heart-proxy-btn');
               
-              proxyBtn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (originalChasmBtn) {
-                  originalChasmBtn.click();
-                }
-              };
-
-              // 장기요약(AI 요약) 하트 버튼(.crack-ext-ai-btn)의 바로 왼쪽으로 정렬 배치
-              const aiBtn = headerContainer.querySelector('.crack-ext-ai-btn');
-              if (aiBtn) {
-                aiBtn.parentNode.insertBefore(proxyBtn, aiBtn);
-              } else {
-                headerContainer.prepend(proxyBtn);
-              }
-            } else {
-              // 정렬 순서 뒤바뀜 방지
-              const aiBtn = headerContainer.querySelector('.crack-ext-ai-btn');
-              if (aiBtn && proxyBtn.nextSibling !== aiBtn) {
-                aiBtn.parentNode.insertBefore(proxyBtn, aiBtn);
+              if (!proxyBtn) {
+                proxyBtn = document.createElement('button');
+                proxyBtn.id = 'chasm-heart-proxy-btn';
+                // 3in1/8in1의 툴바 규격을 동일하게 공유하도록 클래스를 변경하였습니다.
+                proxyBtn.className = 'relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
+                proxyBtn.dataset.chasmIsProxy = 'true';
+                proxyBtn.innerHTML = `<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>`; // 요청하신 텍스트색(#BCD0D7) 적용
+                proxyBtn.title = 'Chasm Tools (로어)';
+                
+                proxyBtn.onclick = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (originalChasmBtn) {
+                    originalChasmBtn.click();
+                  }
+                };
+                targetContainer.appendChild(proxyBtn);
               }
             }
           }
