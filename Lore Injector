@@ -2,8 +2,8 @@
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
 // @version     1.6.3
-// @description 모듈화된 로어 인젝터 로더 (하단 툴바 3선 배치 최적화 버전)
-// @author      로컬AI
+// @description 모듈화된 로어 인젝터 로더 (하단 툴바 빈자리3 배치 및 가림 버그 원천 차단)
+// @author      로컬AI & Assistant 수정
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
 // @downloadURL https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -159,7 +159,7 @@
     }, 0);
   }
 
-  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 (1.5.6 버전의 완벽한 0px 가림막 스타일로 최종 고정) ---
+  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 ---
   try {
     const style = document.createElement('style');
     style.textContent = `
@@ -181,28 +181,24 @@
     console.warn('[LoreInj] 스타일 시트 주입 실패:', e);
   }
 
-  // --- 가볍고 성능 부하가 전혀 없는 주기적 로어 투명화 엔진 (오직 저빈도 타이머로만 무결점 가동) ---
+  // --- 가볍고 성능 부하가 전혀 없는 주기적 로어 투명화 엔진 ---
   function runLoreHidingScan() {
     try {
-      // 아직 숨김 처리 마크가 새겨지지 않은 마크다운 요소만 타겟팅 (연산량 최소화)
       const markdowns = document.querySelectorAll('.wrtn-markdown:not([data-lore-processed="true"])');
       if (markdowns.length === 0) return;
 
       for (let i = 0; i < markdowns.length; i++) {
         const el = markdowns[i];
 
-        // 에디터 활성화 상태 또는 텍스트 입력 칸 내부 요소는 안전하게 패스
         if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
           continue;
         }
 
-        // 로어 블록 존재 여부를 눈으로만 먼저 조회 (에러 유발 방지)
         const text = el.textContent || '';
         if (!text.includes('[System:') && !text.includes('System: Established world')) {
-          continue; // AI 대화 및 무관한 유저 메시지는 단 하나의 속성도 변경하지 않고 완전히 무시
+          continue; 
         }
 
-        // 스캔 처리 마크 등록 (동일 타겟 중복처리 완벽 방지)
         el.dataset.loreProcessed = "true";
 
         const childNodes = Array.from(el.children);
@@ -236,10 +232,8 @@
     }
   }
 
-  // CPU 점유율이 0%에 가까운 3.0초 단위 스캔 방식 적용 (이외의 무거운 MutationObserver 감시기는 모두 완전 파괴)
   setInterval(runLoreHidingScan, 3000);
 
-  // 채팅방 로딩 및 전환 감지 시 즉시 안전 일회성 스캔만 실행
   onRouteChange(() => {
     setTimeout(runLoreHidingScan, 500);
     setTimeout(runLoreHidingScan, 1500);
@@ -541,17 +535,34 @@
 
         for (const el of btns) {
           const txt = el.textContent ? el.textContent.trim() : '';
-          // 유저 요청 사항: '🔥' 이모지 혹은 'Chasm Tools' 어구 매칭으로 안정성 확보
-          if ((txt.includes('🔥') || txt.includes('Chasm Tools')) && !el.dataset.chasmIsProxy) {
-            if (el.tagName === 'BUTTON' || (el.tagName === 'DIV' && txt.length < 30)) {
+          
+          // 글자 수 제한을 없애고, 'Chasm Tools' 혹은 '🔥'이 포함되어 있으면 가립니다.
+          if ((txt.includes('Chasm Tools') || txt.includes('🔥')) && !el.dataset.chasmIsProxy) {
+            
+            // 대형 레이아웃 오작동을 완전히 차단하기 위해, 
+            // 동일한 조건의 글자를 가진 자식 요소가 있는 부모 컨테이너라면 무시하고,
+            // 더 이상 조건에 맞는 자식이 없는 "진짜 최하위 요소"만 가리도록 합니다.
+            const hasMatchingChild = Array.from(el.children).some(child => {
+              const cTxt = child.textContent ? child.textContent.trim() : '';
+              return (cTxt.includes('Chasm Tools') || cTxt.includes('🔥')) && !child.dataset.chasmIsProxy;
+            });
+            
+            if (!hasMatchingChild) {
               originalChasmBtn = el;
+              // 만약 선택된 요소가 span 같은 텍스트 껍데기라면, 버튼(Button) 역할을 하는 부모로 한 칸 올려서 가려줍니다.
+              if (originalChasmBtn.tagName !== 'BUTTON') {
+                const parentBtn = originalChasmBtn.closest('button');
+                if (parentBtn && !parentBtn.dataset.chasmIsProxy) {
+                  originalChasmBtn = parentBtn;
+                }
+              }
               break;
             }
           }
         }
 
         if (originalChasmBtn) {
-          // 원래 버튼은 숨김 처리 (DOM 구조에 유지하여 Chasm Tools가 정상 인식하고 무한 재생성 오류를 막음)
+          // 원래 버튼은 완벽하게 숨김 처리하여 화면에서 사라지게 만듭니다. (DOM 트리에 남겨둬서 시스템은 인식하게 함)
           originalChasmBtn.style.setProperty('position', 'absolute', 'important');
           originalChasmBtn.style.setProperty('opacity', '0', 'important');
           originalChasmBtn.style.setProperty('width', '0', 'important');
@@ -563,26 +574,27 @@
           originalChasmBtn.style.setProperty('border', 'none', 'important');
           originalChasmBtn.style.setProperty('z-index', '-9999', 'important');
 
-          const headerContainer = document.getElementById('custom-rp-tools');
-          if (headerContainer) {
-            const divs = Array.from(headerContainer.children);
-            // 8in1 툴바 내부의 28px 크기 빈공간(Spacer)들을 찾습니다.
+          // 하단 툴바(custom-rp-tools)의 3번째 빈자리 타겟팅 시작
+          const toolWrapper = document.getElementById('custom-rp-tools');
+          if (toolWrapper) {
+            const divs = Array.from(toolWrapper.children);
             const spacers = divs.filter(el => el.tagName === 'DIV' && el.style.width === '28px' && !el.classList.contains('custom-rp-divider'));
             
-            // 세 번째 빈자리(index 2)가 확보된 경우에 프록시 버튼 주입을 시작합니다.
+            // 세 번째 빈자리가 무사히 발견되었을 경우
             if (spacers.length >= 3) {
-              const targetContainer = spacers[2];
-              let proxyBtn = document.getElementById('chasm-heart-proxy-btn');
+              const targetContainer = spacers[2]; 
               
+              let proxyBtn = document.getElementById('chasm-heart-proxy-btn');
               if (!proxyBtn) {
+                // 3in1 / 8in1 툴바 버튼 양식과 똑같은 스타일의 버튼을 새로 생성
                 proxyBtn = document.createElement('button');
                 proxyBtn.id = 'chasm-heart-proxy-btn';
-                // 3in1/8in1의 툴바 규격을 동일하게 공유하도록 클래스를 변경하였습니다.
-                proxyBtn.className = 'relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
+                proxyBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
                 proxyBtn.dataset.chasmIsProxy = 'true';
-                proxyBtn.innerHTML = `<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>`; // 요청하신 텍스트색(#BCD0D7) 적용
-                proxyBtn.title = 'Chasm Tools (로어)';
+                proxyBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
+                proxyBtn.title = '로어 인젝터';
                 
+                // 새로 만든 버튼을 누르면, 숨겨둔 원래 버튼을 몰래 대신 눌러줌
                 proxyBtn.onclick = (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -590,6 +602,10 @@
                     originalChasmBtn.click();
                   }
                 };
+
+                targetContainer.appendChild(proxyBtn);
+              } else if (proxyBtn.parentElement !== targetContainer) {
+                // 이미 만들어진 버튼이 엉뚱한 데 있다면 다시 세 번째 자리에 쏙 넣어줌
                 targetContainer.appendChild(proxyBtn);
               }
             }
@@ -600,7 +616,7 @@
       }
     }
 
-    // 로딩이나 경로 변경에 반응하도록 가볍게 실행 반복
+    // 로딩 속도나 경로 변경에 유연하게 반응하도록 백그라운드 타이머 적용 (부하 매우 적음)
     setInterval(applyTransformation, 500);
   }
 
