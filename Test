@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.4.0-test.65
+// @version     1.4.1-test1
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -23,7 +23,7 @@
 (function () {
   'use strict';
 
-  // --- [수정사항] 안전한 CSS 강제 주입 (최종 최적화 크기 반영) ---
+  // --- [수정사항] 안전한 CSS 강제 주입 ---
   function injectToastStyle() {
     if (document.getElementById('lore-toast-style')) return;
     const style = document.createElement('style');
@@ -34,7 +34,7 @@
         50% { opacity: 1; transform: scale(1.1); }
         100% { opacity: 0.3; transform: scale(0.9); }
       }
-      /* 외부 토스트 레이아웃 강제 중앙 정렬 및 최적화 크기 적용 */
+      /* 외부 토스트 레이아웃 강제 중앙 정렬 및 디자인 테마 적용 */
       :root body div.toastify, :root body .toastify {
         top: 50% !important;
         left: 50% !important;
@@ -45,10 +45,10 @@
         color: #486D7A !important;
         border: 1px solid #486D7A !important;
         border-radius: 9999px !important;
-        padding: 7px 15px !important; /* 미세 확대 */
+        padding: 7px 15px !important; 
         box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
         font-family: inherit !important;
-        font-size: 13px !important; /* 미세 확대 */
+        font-size: 13px !important; 
         font-weight: 500 !important;
         display: flex !important;
         align-items: center !important;
@@ -57,13 +57,13 @@
         line-height: 1.2 !important;
         min-height: auto !important;
       }
-      /* 외부 토스트 좌측 점멸등 추가 (#c1faff) */
+      /* 외부 토스트 좌측 점멸등 추가 */
       :root body div.toastify::before, :root body .toastify::before {
         content: '' !important;
         display: inline-block !important;
-        width: 8px !important; /* 점멸등 최적 크기 */
+        width: 8px !important; 
         height: 8px !important;
-        background-color: #c1faff !important; /* 검증 완료된 색상 */
+        background-color: #c1faff !important; 
         border-radius: 50% !important;
         margin-right: 8px !important;
         animation: pulse-dot 1.5s infinite ease-in-out !important;
@@ -79,14 +79,14 @@
   });
   if (!document.head) styleObserver.observe(document.documentElement, { childList: true });
 
-  // --- [수정사항] 커스텀 인젝트 전용 토스트 생성 (수치 최적화) ---
+  // --- [수정사항] 커스텀 인젝트 전용 토스트 생성 (볼드체 해제 적용) ---
   function showCustomInjectToast(text) {
     try {
       const mount = document.body || document.documentElement;
       if (!mount) return;
       const toast = document.createElement('div');
-      // 겹치지 않도록 정중앙에서 위로 46px 위치 적용
-      toast.style.cssText = 'position:fixed;top:calc(50% - 46px);left:50%;transform:translate(-50%, -50%);background:#BCD0D7;color:#486D7A;border:1px solid #486D7A;border-radius:9999px;padding:7px 15px;z-index:2147483647;font-family:inherit;font-size:13px;font-weight:bold;line-height:1.2;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);opacity:0;transition:opacity 0.2s ease-in-out;display:flex;align-items:center;justify-content:center;';
+      // font-weight를 bold에서 500(보통 두께)으로 변경하여 볼드체 해제
+      toast.style.cssText = 'position:fixed;top:calc(50% - 46px);left:50%;transform:translate(-50%, -50%);background:#BCD0D7;color:#486D7A;border:1px solid #486D7A;border-radius:9999px;padding:7px 15px;z-index:2147483647;font-family:inherit;font-size:13px;font-weight:500;line-height:1.2;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);opacity:0;transition:opacity 0.2s ease-in-out;display:flex;align-items:center;justify-content:center;';
       toast.textContent = text;
       mount.appendChild(toast);
       
@@ -104,7 +104,7 @@
   // -------------------------------------------------------------
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.4.0-test.65';
+  const LOADER_VERSION = '1.4.1-test1';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -363,7 +363,6 @@
   });
   updateRoute();
 
-  // --- [수정사항] 로더 뱃지도 최적 크기 및 점멸등 색상(#c1faff) 반영 ---
   function showLoaderBadge(text) {
     try {
       const mount = document.body || document.documentElement;
