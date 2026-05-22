@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.4
-// @description 모듈화된 로어 인젝터 로더 (원본 버튼 은폐 및 하단 원격 클릭 연동 - 유저 지시 완벽 이행본)
+// @version     1.7.5
+// @description 모듈화된 로어 인젝터 로더 (헤더 증발 버그 픽스 및 실시간 버튼 연동 완벽 수정)
 // @author      로컬AI & Assistant 수정
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -115,7 +115,6 @@
         const toast = document.createElement('div');
         toast.id = 'lore-center-toast';
         
-        // CSS 색상 요청하신 사항 완벽 적용 (배경 #BCD0D7, 글자/테두리 #486D7A)
         toast.style.cssText = `
           position: fixed;
           top: calc(50% - 30px);
@@ -526,63 +525,65 @@
     });
   }
 
-  // --- 유저 지시 완벽 반영: 원본 버튼은 순수하게 가리기만 하고, 하단 버튼으로 단순 연결 ---
+  // --- 유저 지시 완벽 반영: 상단 버튼은 오직 <button>만 찾아서 가리고, 하단 버튼에서 실시간 클릭 호출 ---
   function initHeartButtonChanger() {
     function applyTransformation() {
       try {
         const headerContainer = document.querySelector('.absolute.z-\\[5\\]');
         if (!headerContainer) return;
 
-        let originalChasmBtn = null;
+        // [중요 수정] div, span 무시하고 오직 button 태그만 찾아 레이아웃 증발 완벽 방지
+        const headerBtns = headerContainer.querySelectorAll('button');
         
-        // 상단 헤더에서 원래 '🔥 Chasm Tools' 버튼을 찾음
-        const btnsInHeader = headerContainer.querySelectorAll('button, div, span, a');
-        for (const el of btnsInHeader) {
-          const txt = el.textContent || '';
+        for (const btn of headerBtns) {
+          const txt = btn.textContent || '';
           if (txt.includes('Chasm Tools') || txt.includes('🔥')) {
-            originalChasmBtn = el.closest('button') || el;
-            break;
+            // 버튼을 찾았으니 화면에서 투명하게만 가려둠
+            btn.style.setProperty('position', 'absolute', 'important');
+            btn.style.setProperty('opacity', '0', 'important');
+            btn.style.setProperty('width', '0', 'important');
+            btn.style.setProperty('height', '0', 'important');
+            btn.style.setProperty('pointer-events', 'none', 'important');
+            btn.style.setProperty('overflow', 'hidden', 'important');
+            break; // 찾았으면 더 이상 안 찾음
           }
         }
 
-        if (originalChasmBtn) {
-          // [핵심] 유저 지시대로, 원래 버튼의 클래스나 구조는 전혀 건드리지 않고 오직 시각적으로만 가림(투명화)
-          originalChasmBtn.style.setProperty('position', 'absolute', 'important');
-          originalChasmBtn.style.setProperty('opacity', '0', 'important');
-          originalChasmBtn.style.setProperty('pointer-events', 'none', 'important');
-          originalChasmBtn.style.setProperty('width', '0', 'important');
-          originalChasmBtn.style.setProperty('height', '0', 'important');
-          originalChasmBtn.style.setProperty('overflow', 'hidden', 'important');
-
-          // 하단 툴바(빈자리 3) 찾기
-          const toolWrapper = document.getElementById('custom-rp-tools');
-          if (toolWrapper) {
-            const spacers = Array.from(toolWrapper.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
+        // 하단 툴바(빈자리 3) 찾아서 새 버튼 이식
+        const toolWrapper = document.getElementById('custom-rp-tools');
+        if (toolWrapper) {
+          const spacers = Array.from(toolWrapper.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
+          
+          if (spacers.length >= 3) {
+            const targetContainer = spacers[2]; 
             
-            if (spacers.length >= 3) {
-              const targetContainer = spacers[2]; 
+            let bottomBtn = document.getElementById('lore-bottom-visual-btn');
+            if (!bottomBtn) {
+              bottomBtn = document.createElement('button');
+              bottomBtn.id = 'lore-bottom-visual-btn';
               
-              let bottomBtn = document.getElementById('lore-bottom-visual-btn');
-              if (!bottomBtn) {
-                bottomBtn = document.createElement('button');
-                bottomBtn.id = 'lore-bottom-visual-btn';
+              // 8in1 순수 둥근 원형 클래스 적용 (네모 찌그러짐 원천 차단)
+              bottomBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
+              bottomBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
+              bottomBtn.title = '로어 인젝터';
+              
+              // [중요 수정] 클릭하는 찰나의 순간에 실시간으로 버튼을 찾아서 클릭 (좀비 버튼 클릭으로 인한 링크 단절 완벽 픽스)
+              bottomBtn.onclick = (e) => {
+                e.preventDefault(); 
+                e.stopPropagation();
                 
-                // 순수한 8in1 클래스만 입혀서 둥근 원형 버튼 생성 (가짜 클래스 주입 금지)
-                bottomBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
-                bottomBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
-                bottomBtn.title = '로어 인젝터';
-                
-                // 누르면 그저 상단에 숨겨진 '원래 버튼'을 대신 클릭해줌
-                bottomBtn.onclick = (e) => {
-                  e.preventDefault(); 
-                  e.stopPropagation();
-                  if (originalChasmBtn) originalChasmBtn.click();
-                };
-                
-                targetContainer.appendChild(bottomBtn);
-              } else if (bottomBtn.parentElement !== targetContainer) {
-                targetContainer.appendChild(bottomBtn);
-              }
+                const currentHeaderBtns = document.querySelectorAll('.absolute.z-\\[5\\] button');
+                for (const b of currentHeaderBtns) {
+                  if (b.textContent.includes('Chasm Tools') || b.textContent.includes('🔥')) {
+                    b.click();
+                    break;
+                  }
+                }
+              };
+              
+              targetContainer.appendChild(bottomBtn);
+            } else if (bottomBtn.parentElement !== targetContainer) {
+              targetContainer.appendChild(bottomBtn);
             }
           }
         }
@@ -591,7 +592,7 @@
       }
     }
 
-    // 0.5초마다 아주 가볍게 스캔하여 버튼 상태 유지
+    // 0.5초마다 가볍게 스캔하여 버튼 상태 유지
     setInterval(applyTransformation, 500);
   }
 
