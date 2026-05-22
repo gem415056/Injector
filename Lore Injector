@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.6.9
-// @description 모듈화된 로어 인젝터 로더 (상단 툴바 한정 정밀 탐색 적용 및 알림 색상 픽스)
+// @version     1.7.0
+// @description 모듈화된 로어 인젝터 로더 (네모 버튼 모양 찌그러짐 완벽 픽스 - 8in1 원형 규격 강제 고정)
 // @author      로컬AI & Assistant 수정
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -115,7 +115,6 @@
         const toast = document.createElement('div');
         toast.id = 'lore-center-toast';
         
-        // CSS 색상 고정 (배경 #BCD0D7, 테두리 및 텍스트 #486D7A)
         toast.style.cssText = `
           position: fixed;
           top: calc(50% - 30px);
@@ -417,7 +416,6 @@
   });
   updateRoute();
 
-  // --- 하단 우측 로딩 배지 색상도 동일하게 고정 적용 ---
   function showLoaderBadge(text, color = '#4a9') {
     try {
       const mount = document.body || document.documentElement;
@@ -526,7 +524,7 @@
     });
   }
 
-  // --- Chasm Tools 하트 버튼 탐색 로직 (유저님의 천재적인 피드백 반영: 오직 상단 헤더만 스캔!) ---
+  // --- Chasm Tools 하트 버튼 탐색 로직 ---
   function initHeartButtonChanger() {
     if (typeof GM_addStyle !== 'undefined') {
       GM_addStyle(`
@@ -569,14 +567,10 @@
 
     function applyTransformation() {
       try {
-        // [중요 개선점] 문서 전체가 아닌, 짚어주신 '상단 헤더 툴바' 구역만 콕 집어서 탐색합니다.
-        // 덕분에 채팅 메시지 등 다른 곳에서 'Chasm Tools'를 언급해도 절대 오작동(화면 날아감)하지 않습니다!
         const headerContainer = document.querySelector('.absolute.z-\\[5\\] .flex.gap-3.items-center') || document.querySelector('.absolute.z-\\[5\\]');
-        if (!headerContainer) return; // 상단 헤더가 아직 로드되지 않았다면 대기
+        if (!headerContainer) return;
 
         let originalChasmBtn = null;
-        
-        // 헤더 안의 요소들만 가볍게 검사합니다.
         const btnsInHeader = headerContainer.querySelectorAll('button, div, span, a');
         
         for (const el of btnsInHeader) {
@@ -584,14 +578,12 @@
 
           const txt = el.textContent || '';
           if (txt.includes('Chasm Tools') || txt.includes('🔥')) {
-            // 해당 텍스트를 포함하고 있다면, 그 부모 버튼(button)을 최종 타겟으로 잡습니다.
             originalChasmBtn = el.closest('button') || el;
             break;
           }
         }
 
         if (originalChasmBtn) {
-          // 원래 버튼은 완벽하게 숨김 처리 (삭제하지 않아 스크립트 연결 유지)
           originalChasmBtn.style.setProperty('position', 'absolute', 'important');
           originalChasmBtn.style.setProperty('opacity', '0', 'important');
           originalChasmBtn.style.setProperty('width', '0', 'important');
@@ -603,12 +595,10 @@
           originalChasmBtn.style.setProperty('border', 'none', 'important');
           originalChasmBtn.style.setProperty('z-index', '-9999', 'important');
 
-          // 하단 툴바(custom-rp-tools) 탐색 및 빈자리 찾기
           const toolWrapper = document.getElementById('custom-rp-tools');
           if (toolWrapper) {
             const spacers = Array.from(toolWrapper.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
             
-            // 세 번째 빈자리가 무사히 발견되었을 경우
             if (spacers.length >= 3) {
               const targetContainer = spacers[2]; 
               
@@ -617,13 +607,20 @@
                 proxyBtn = document.createElement('button');
                 proxyBtn.id = 'chasm-heart-proxy-btn';
                 
-                // 기존 모듈 에러 방지를 위해 원본 클래스명 그대로 유지 + 8in1 스타일 혼합
                 proxyBtn.className = 'chasm-heart-btn crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
                 proxyBtn.dataset.chasmIsProxy = 'true';
                 proxyBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
                 proxyBtn.title = '로어 인젝터';
                 
-                // 대체 버튼을 누르면 숨겨둔 원래 버튼을 클릭하도록 매핑
+                // [핵심 조치] 클래스명 유지로 인해 딸려온 네모 CSS를 무력화하고 8in1 원형 버튼 규격으로 멱살 잡고 고정
+                proxyBtn.style.setProperty('width', '28px', 'important');
+                proxyBtn.style.setProperty('height', '28px', 'important');
+                proxyBtn.style.setProperty('border-radius', '9999px', 'important'); // 완벽한 원형
+                proxyBtn.style.setProperty('margin', '0', 'important');
+                proxyBtn.style.setProperty('border', '1px solid var(--border)', 'important');
+                proxyBtn.style.setProperty('background-color', 'var(--card)', 'important');
+                proxyBtn.style.setProperty('padding', '0', 'important');
+                
                 proxyBtn.onclick = (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -644,7 +641,6 @@
       }
     }
 
-    // 부하가 전혀 없는 가벼운 백그라운드 반복 실행
     setInterval(applyTransformation, 500);
   }
 
