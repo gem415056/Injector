@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.6
-// @description 모듈화된 로어 인젝터 로더 (원복 클래스명 적용 및 로어 삽입 복구 완료)
+// @version     1.7.7
+// @description 모듈화된 로어 인젝터 로더 (인젝트 완벽 성공본 - 실시간 연산/추출 알림 토스트 일괄 디자인 통일)
 // @author      로컬AI & Assistant 수정
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -158,7 +158,7 @@
     }, 0);
   }
 
-  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 ---
+  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 (Toastify 알림창 색상 일괄 변경 포함) ---
   try {
     const style = document.createElement('style');
     style.textContent = `
@@ -173,6 +173,16 @@
         border: none !important;
         pointer-events: none !important;
         position: absolute !important;
+      }
+      
+      /* [추가] 추출, 생성, 연산 등 외부 모듈(Toastify)이 띄우는 모든 알림창 색상 일괄 통일 */
+      .toastify {
+        background: #BCD0D7 !important;
+        color: #486D7A !important;
+        border: 1px solid #486D7A !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+        text-shadow: none !important;
+        font-weight: 500 !important;
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -416,7 +426,6 @@
   });
   updateRoute();
 
-  // --- 하단 우측 로딩 배지 색상 ---
   function showLoaderBadge(text, color = '#4a9') {
     try {
       const mount = document.body || document.documentElement;
@@ -525,7 +534,7 @@
     });
   }
 
-  // --- Chasm Tools 하트 버튼 탐색 및 삽입 기능 완벽 복구 ---
+  // --- Chasm Tools 하트 버튼 탐색 및 연동 ---
   function initHeartButtonChanger() {
     function applyTransformation() {
       try {
@@ -538,7 +547,6 @@
         for (const btn of headerBtns) {
           const txt = btn.textContent || '';
           if (txt.includes('Chasm Tools') || txt.includes('🔥')) {
-            // 원래 버튼 가림
             btn.style.setProperty('position', 'absolute', 'important');
             btn.style.setProperty('opacity', '0', 'important');
             btn.style.setProperty('width', '0', 'important');
@@ -549,7 +557,7 @@
           }
         }
 
-        // 하단 툴바(custom-rp-tools) 검색
+        // 하단 툴바(custom-rp-tools) 검색 및 버튼 이식
         const toolWrapper = document.getElementById('custom-rp-tools');
         if (toolWrapper) {
           const spacers = Array.from(toolWrapper.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
@@ -557,20 +565,19 @@
           if (spacers.length >= 3) {
             const targetContainer = spacers[2]; 
             
-            // [중요 해결] ID와 클래스명을 원래 규격인 'chasm-heart-proxy-btn' 및 'chasm-heart-btn'으로 유지하여
-            // 외부 로어 모듈이 연동 대상을 찾지 못하고 뻗어버리던 버그를 완전히 해결했습니다.
+            // 핵심 클래스명('chasm-heart-proxy-btn', 'chasm-heart-btn') 유지로 로어 외부 모듈 완벽 연동
             let bottomBtn = document.getElementById('chasm-heart-proxy-btn');
             if (!bottomBtn) {
               bottomBtn = document.createElement('button');
               bottomBtn.id = 'chasm-heart-proxy-btn';
               
-              // 8in1 순수 둥근 원형 클래스를 적용하여 디자인을 완벽히 맞춥니다.
+              // 8in1 순수 원형 스타일만 입혀 아름다운 하트 버튼 생성
               bottomBtn.className = 'chasm-heart-btn crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
               bottomBtn.dataset.chasmIsProxy = 'true';
               bottomBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
               bottomBtn.title = '로어 인젝터';
               
-              // 클릭 시 현재 헤더에 렌더링된 실시간 원래 버튼을 정밀하게 탐색하여 누릅니다.
+              // 실시간 원래 버튼 클릭 연동
               bottomBtn.onclick = (e) => {
                 e.preventDefault(); 
                 e.stopPropagation();
@@ -595,7 +602,6 @@
       }
     }
 
-    // 0.5초마다 주기적 탐색 실행
     setInterval(applyTransformation, 500);
   }
 
