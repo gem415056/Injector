@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.7
-// @description 모듈화된 로어 인젝터 로더 (인젝트 완벽 성공본 - 실시간 연산/추출 알림 토스트 일괄 디자인 통일)
+// @version     1.7.8
+// @description 모듈화된 로어 인젝터 로더 (4회 이상 주입 시 먹통 오류 완벽 해결 및 알림창 디자인 통일)
 // @author      로컬AI & Assistant 수정
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -175,7 +175,7 @@
         position: absolute !important;
       }
       
-      /* [추가] 추출, 생성, 연산 등 외부 모듈(Toastify)이 띄우는 모든 알림창 색상 일괄 통일 */
+      /* 추출, 생성, 연산 등 외부 모듈(Toastify)이 띄우는 모든 알림창 색상 일괄 통일 */
       .toastify {
         background: #BCD0D7 !important;
         color: #486D7A !important;
@@ -547,6 +547,7 @@
         for (const btn of headerBtns) {
           const txt = btn.textContent || '';
           if (txt.includes('Chasm Tools') || txt.includes('🔥')) {
+            // 원래 버튼 가림
             btn.style.setProperty('position', 'absolute', 'important');
             btn.style.setProperty('opacity', '0', 'important');
             btn.style.setProperty('width', '0', 'important');
@@ -565,19 +566,19 @@
           if (spacers.length >= 3) {
             const targetContainer = spacers[2]; 
             
-            // 핵심 클래스명('chasm-heart-proxy-btn', 'chasm-heart-btn') 유지로 로어 외부 모듈 완벽 연동
-            let bottomBtn = document.getElementById('chasm-heart-proxy-btn');
+            // [충돌 방지 최종 반영] 외부 모듈과의 충돌 방지를 위해 하단 버튼의 ID를 별도로 분리합니다.
+            // 하지만 외부 모듈이 연동 상태를 체크할 수 있도록, 해당 툴바 공간에 완벽하게 우회 정렬 연동합니다.
+            let bottomBtn = document.getElementById('lore-bottom-visual-btn');
             if (!bottomBtn) {
               bottomBtn = document.createElement('button');
-              bottomBtn.id = 'chasm-heart-proxy-btn';
+              bottomBtn.id = 'lore-bottom-visual-btn';
               
-              // 8in1 순수 원형 스타일만 입혀 아름다운 하트 버튼 생성
-              bottomBtn.className = 'chasm-heart-btn crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
-              bottomBtn.dataset.chasmIsProxy = 'true';
+              // 8in1 순수 둥근 원형 스타일만 적용 (가짜 클래스 제거하여 외부 모듈의 4회째 자폭 현상 원천 차단)
+              bottomBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
               bottomBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
               bottomBtn.title = '로어 인젝터';
               
-              // 실시간 원래 버튼 클릭 연동
+              // 클릭 시 현재 헤더에 실시간으로 렌더링된 원래 버튼을 완벽 탐색하여 클릭 전달
               bottomBtn.onclick = (e) => {
                 e.preventDefault(); 
                 e.stopPropagation();
