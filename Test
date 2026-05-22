@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     2.1.2
-// @description 오리지널 1.4.0 기반 / 외부 모듈 알림(Toastify) 우하단 고정 해제 및 정중앙 타원형 완벽 통일
-// @author      로컬AI & Assistant 수정
+// @version     1.4.0-test.65
+// @description 모듈화된 로어 인젝터 로더
+// @author      로컬AI
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
 // @downloadURL https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -68,6 +68,99 @@
     CDN_BASE + 'injecter-6-ui.js?' + CACHE
   ];
 
+  // CSS 테마 스타일 주입
+  GM_addStyle(`
+    @keyframes pulse-dot {
+      0% { opacity: 0.3; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.1); }
+      100% { opacity: 0.3; transform: scale(0.9); }
+    }
+
+    /* 외부 토스트 레이아웃 강제 중앙 정렬 및 디자인 테마 적용 */
+    :root body div.toastify, :root body .toastify {
+      top: 50% !important;
+      left: 50% !important;
+      bottom: auto !important;
+      right: auto !important;
+      transform: translate(-50%, -50%) !important;
+      background: #BCD0D7 !important;
+      color: #486D7A !important;
+      border: 1px solid #486D7A !important;
+      border-radius: 9999px !important;
+      padding: 8px 16px !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+      font-family: inherit !important;
+      font-size: 14px !important;
+      font-weight: 500 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    /* 외부 토스트 좌측에 부드럽게 깜빡이는 상태 표시등 추가 */
+    :root body div.toastify::before, :root body .toastify::before {
+      content: '' !important;
+      display: inline-block !important;
+      width: 8px !important;
+      height: 8px !important;
+      background-color: #bdb1a1 !important;
+      border-radius: 50% !important;
+      margin-right: 8px !important;
+      animation: pulse-dot 1.5s infinite ease-in-out !important;
+      vertical-align: middle !important;
+    }
+
+    /* 내부 커스텀 인젝트 전용 토스트 레이아웃 (불빛 없음) */
+    .lore-inject-toast {
+      position: fixed !important;
+      left: 50% !important;
+      top: calc(50% - 48px) !important;
+      transform: translate(-50%, -50%) !important;
+      background: #BCD0D7 !important;
+      color: #486D7A !important;
+      border: 1px solid #486D7A !important;
+      border-radius: 9999px !important;
+      padding: 8px 16px !important;
+      z-index: 2147483647 !important;
+      font-family: inherit !important;
+      font-size: 14px !important;
+      font-weight: bold !important;
+      pointer-events: none !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+      opacity: 0;
+      transition: opacity 0.2s ease-in-out !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    .lore-inject-toast.show {
+      opacity: 1 !important;
+    }
+  `);
+
+  // 커스텀 인젝트 토스트 렌더링 헬퍼 함수
+  function showCustomInjectToast(text) {
+    try {
+      const mount = document.body || document.documentElement;
+      if (!mount) return;
+      const toast = document.createElement('div');
+      toast.className = 'lore-inject-toast';
+      toast.textContent = text;
+      mount.appendChild(toast);
+      
+      // 애니메이션 발동을 위한 강제 리플로우
+      toast.offsetHeight;
+      toast.classList.add('show');
+      
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 250);
+      }, 2500);
+    } catch (e) {
+      console.error('[Lore] 토스트 렌더링 에러:', e);
+    }
+  }
+
   _w.__LoreInj = _w.__LoreInj || {};
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
@@ -102,164 +195,6 @@
     _w.__LoreInjReady = p;
   }
 
-  // --- 인젝트 완료/오류 토스트 (둥근 타원형 및 정중앙의 8px 위 위치) ---
-  function showCenterToast(message, isSuccess) {
-    setTimeout(() => {
-      try {
-        const mount = document.body || document.documentElement;
-        if (!mount) return;
-        
-        const oldToast = document.getElementById('lore-center-toast');
-        if (oldToast) oldToast.remove();
-
-        const toast = document.createElement('div');
-        toast.id = 'lore-center-toast';
-        
-        toast.style.cssText = `
-          position: fixed;
-          top: calc(50% - 48px); 
-          left: 50%;
-          transform: translate(-50%, -50%);
-          z-index: 2147483647;
-          background: #BCD0D7;
-          border: 1px solid #486D7A;
-          border-radius: 9999px;
-          padding: 8px 20px;
-          font-size: 13px;
-          line-height: 1.4;
-          font-weight: 500;
-          color: #486D7A;
-          box-shadow: 0 4px 12px rgba(0,0,0,.15);
-          font-family: inherit;
-          pointer-events: none;
-          transition: opacity 0.2s ease, transform 0.2s ease;
-          opacity: 0;
-        `;
-        
-        toast.textContent = message;
-        mount.appendChild(toast);
-
-        requestAnimationFrame(() => {
-          toast.style.opacity = '1';
-          toast.style.transform = 'translate(-50%, -50%) scale(1.02)';
-          setTimeout(() => {
-            toast.style.transform = 'translate(-50%, -50%) scale(1)';
-          }, 80);
-        });
-
-        setTimeout(() => {
-          toast.style.opacity = '0';
-          toast.style.transform = 'translate(-50%, -50%) scale(0.98)';
-          setTimeout(() => toast.remove(), 200);
-        }, 2200);
-      } catch (e) {
-        console.warn('[LoreInj] 토스트 출력 실패:', e);
-      }
-    }, 0);
-  }
-
-  // --- 로어 가림막 CSS 및 외부 모듈 알림창(Toastify) 최상위 우선순위 중앙 강제 정렬 ---
-  try {
-    const style = document.createElement('style');
-    style.textContent = `
-      .erie-hidden-lore {
-        opacity: 0 !important;
-        height: 0 !important;
-        min-height: 0 !important;
-        max-height: 0 !important;
-        overflow: hidden !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-        pointer-events: none !important;
-        position: absolute !important;
-      }
-      
-      /* [핵심 픽스] CSS 우선순위를 강제로 끌어올려 Toastify의 우하단 인라인 스타일을 무력화 */
-      :root body div.toastify,
-      :root body .toastify {
-        position: fixed !important;
-        top: 50% !important;
-        left: 50% !important;
-        bottom: auto !important; /* 우하단 고정 해제 */
-        right: auto !important;  /* 우하단 고정 해제 */
-        transform: translate(-50%, -50%) !important;
-        background: #BCD0D7 !important;
-        color: #486D7A !important;
-        border: 1px solid #486D7A !important;
-        border-radius: 9999px !important;
-        padding: 8px 20px !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-        text-shadow: none !important;
-        font-weight: 500 !important;
-        margin: 0 !important;
-        z-index: 2147483646 !important;
-      }
-    `;
-    (document.head || document.documentElement).appendChild(style);
-  } catch (e) {
-    console.warn('[LoreInj] 스타일 시트 주입 실패:', e);
-  }
-
-  // --- 주기적 로어 투명화 엔진 ---
-  function runLoreHidingScan() {
-    try {
-      const markdowns = document.querySelectorAll('.wrtn-markdown:not([data-lore-processed="true"])');
-      if (markdowns.length === 0) return;
-
-      for (let i = 0; i < markdowns.length; i++) {
-        const el = markdowns[i];
-
-        if (el.closest('.ProseMirror') || el.classList.contains('ProseMirror') || el.closest('.__chat_input_textarea')) {
-          continue;
-        }
-
-        const text = el.textContent || '';
-        if (!text.includes('[System:') && !text.includes('System: Established world')) {
-          continue; 
-        }
-
-        el.dataset.loreProcessed = "true";
-
-        const childNodes = Array.from(el.children);
-        let isInsideSystem = false;
-        const targets = [];
-
-        for (const child of childNodes) {
-          const childText = child.textContent || '';
-          
-          if (childText.includes('[System:') || childText.includes('System: Established world')) {
-            isInsideSystem = true;
-          }
-
-          if (isInsideSystem) {
-            targets.push(child);
-          }
-
-          if (childText.includes('[/System]') || childText.includes('[/System]‌')) {
-            isInsideSystem = false;
-          }
-        }
-
-        if (targets.length > 0) {
-          targets.forEach(node => {
-            node.classList.add('erie-hidden-lore');
-          });
-        }
-      }
-    } catch (e) {
-      console.warn('[LoreInj] 주기적 로어 스캔 중 오류:', e);
-    }
-  }
-
-  setInterval(runLoreHidingScan, 3000);
-
-  onRouteChange(() => {
-    setTimeout(runLoreHidingScan, 500);
-    setTimeout(runLoreHidingScan, 1500);
-  });
-
-  // --- 오리지널 인젝트 엔진 + 토스트 호출 ---
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -269,11 +204,11 @@
 
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
-      try { 
-        return await injectFn(text); 
+      try {
+        return await injectFn(text);
       } catch (e) {
         console.error('[Lore] early inject err:', e);
-        showCenterToast('로어 인젝트 오류', false);
+        showCustomInjectToast('로어 인젝트 오류');
         return text;
       }
     }
@@ -294,12 +229,12 @@
                   if (orig !== mod) {
                     arr[1].message = mod;
                     origWsSend.call(ws, prefix + JSON.stringify(arr));
-                    showCenterToast('✨ 로어 인젝트 완료', true);
+                    showCustomInjectToast('✨ 로어 인젝트 완료');
                   } else {
                     origWsSend.call(ws, data);
                   }
-                } catch (err) {
-                  showCenterToast('로어 인젝트 오류', false);
+                } catch (innerErr) {
+                  showCustomInjectToast('로어 인젝트 오류');
                   origWsSend.call(ws, data);
                 }
               })();
@@ -326,41 +261,57 @@
               let body = null; try { body = JSON.parse(bodyText); } catch (_) {}
               if (body && typeof body === 'object') {
                 let injected = false;
-                if (Array.isArray(body.messages)) {
-                  for (let i = body.messages.length - 1; i >= 0; i--) {
-                    if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
-                      const orig = body.messages[i].content;
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body.messages[i].content = mod; injected = true; }
-                      break;
+                try {
+                  if (Array.isArray(body.messages)) {
+                    for (let i = body.messages.length - 1; i >= 0; i--) {
+                      if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
+                        const orig = body.messages[i].content;
+                        const mod = await injectText(orig);
+                        if (orig !== mod) {
+                          body.messages[i].content = mod;
+                          injected = true;
+                          showCustomInjectToast('✨ 로어 인젝트 완료');
+                        }
+                        break;
+                      }
                     }
                   }
-                }
-                if (!injected) {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body[key] === 'string') {
-                      const orig = body[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body[key] = mod; injected = true; }
-                      break;
+                  if (!injected) {
+                    for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                      if (typeof body[key] === 'string') {
+                        const orig = body[key];
+                        const mod = await injectText(orig);
+                        if (orig !== mod) {
+                          body[key] = mod;
+                          injected = true;
+                          showCustomInjectToast('✨ 로어 인젝트 완료');
+                        }
+                        break;
+                      }
                     }
                   }
-                }
-                if (!injected && body.variables && typeof body.variables === 'object') {
-                  for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
-                    if (typeof body.variables[key] === 'string') {
-                      const orig = body.variables[key];
-                      const mod = await injectText(orig);
-                      if (orig !== mod) { body.variables[key] = mod; injected = true; }
-                      break;
+                  if (!injected && body.variables && typeof body.variables === 'object') {
+                    for (const key of ['content', 'message', 'text', 'prompt', 'query']) {
+                      if (typeof body.variables[key] === 'string') {
+                        const orig = body.variables[key];
+                        const mod = await injectText(orig);
+                        if (orig !== mod) {
+                          body.variables[key] = mod;
+                          injected = true;
+                          showCustomInjectToast('✨ 로어 인젝트 완료');
+                        }
+                        break;
+                      }
                     }
                   }
+                } catch (innerErr) {
+                  showCustomInjectToast('로어 인젝트 오류');
+                  throw innerErr;
                 }
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
                   if (isReq) args[0] = new Request(args[0], { body: newBodyText });
                   else { args[1] = args[1] || {}; args[1].body = newBodyText; }
-                  showCenterToast('✨ 로어 인젝트 완료', true);
                 }
               }
             }
@@ -368,7 +319,6 @@
         }
       } catch (e) {
         console.error('[Lore] early fetch hook err:', e);
-        showCenterToast('로어 인젝트 오류', false);
       }
       return origFetch.apply(this, args);
     };
@@ -440,8 +390,7 @@
   });
   updateRoute();
 
-  // --- 정중앙 로딩 배지 (외부 알림과 동일한 둥근 타원형 적용) ---
-  function showLoaderBadge(text) {
+  function showLoaderBadge(text, color = '#4a9') {
     try {
       const mount = document.body || document.documentElement;
       if (!mount) return;
@@ -449,10 +398,11 @@
       if (!el) {
         el = document.createElement('div');
         el.id = 'lore-lite-loader-badge';
-        el.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:2147483646; background:#BCD0D7; border:1px solid #486D7A; border-radius:9999px; padding:8px 20px; font-size:13px; font-weight:500; color:#486D7A; box-shadow:0 4px 12px rgba(0,0,0,.15); font-family:inherit; pointer-events:none; margin:0;';
+        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
         mount.appendChild(el);
       }
       el.textContent = text;
+      el.style.borderColor = color;
     } catch (_) {}
   }
 
@@ -512,7 +462,7 @@
       const missing = requiredAll.filter(k => !L[k]);
       console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
       settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
-      showLoaderBadge('로어 로드 지연: 콘솔 확인');
+      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
     };
     check();
   }
@@ -534,8 +484,8 @@
       startReadyGate();
     } catch (e) {
       L0.__dynamicLoadError = String(e && e.message || e);
-      console.error('[LoreInj] 동적 로드 실패:', e);
-      showLoaderBadge('로어 로드 실패: 콘솔 확인');
+      console.error('[Lore] 동적 로드 실패:', e);
+      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
       try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
     }
   }
@@ -547,90 +497,5 @@
     onRouteChange(() => {
       if (isChatPath()) loadHeavyModules();
     });
-  }
-
-  // --- 원래 버튼 은폐 및 하단 빈자리 3 리모컨 버튼 생성 ---
-  function initHeartButtonChanger() {
-    function applyTransformation() {
-      try {
-        const btns = Array.from(document.querySelectorAll('button, a'));
-        let origBtn = null;
-
-        for (const b of btns) {
-          if (b.id === 'lore-bottom-visual-btn') continue;
-          let txt = b.textContent || '';
-          if (txt.includes('Chasm Tools') || txt.includes('🔥')) {
-            origBtn = b.closest('button') || b;
-            break;
-          }
-        }
-
-        if (origBtn) {
-          // 원래 버튼은 CSS로 투명하게만 숨김 처리 (기능 파괴 없음)
-          origBtn.style.setProperty('position', 'absolute', 'important');
-          origBtn.style.setProperty('opacity', '0', 'important');
-          origBtn.style.setProperty('pointer-events', 'none', 'important');
-          origBtn.style.setProperty('width', '0', 'important');
-          origBtn.style.setProperty('height', '0', 'important');
-          origBtn.style.setProperty('overflow', 'hidden', 'important');
-          origBtn.style.setProperty('margin', '0', 'important');
-          origBtn.style.setProperty('padding', '0', 'important');
-          origBtn.style.setProperty('border', 'none', 'important');
-          origBtn.style.setProperty('z-index', '-9999', 'important');
-
-          const toolWrapper = document.getElementById('custom-rp-tools');
-          if (toolWrapper) {
-            const spacers = Array.from(toolWrapper.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
-            
-            if (spacers.length >= 3) {
-              const targetContainer = spacers[2]; 
-              
-              let bottomBtn = document.getElementById('lore-bottom-visual-btn');
-              if (!bottomBtn) {
-                bottomBtn = document.createElement('button');
-                bottomBtn.id = 'lore-bottom-visual-btn';
-                // 8in1 기본 원형 스타일만 적용 (외부 모듈 클래스 일절 넣지 않음)
-                bottomBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
-                bottomBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
-                bottomBtn.title = '로어 인젝터';
-                
-                targetContainer.appendChild(bottomBtn);
-              } else if (bottomBtn.parentElement !== targetContainer) {
-                targetContainer.appendChild(bottomBtn);
-              }
-
-              // 클릭 연동 (숨긴 원래 버튼을 대신 클릭)
-              bottomBtn.onclick = (e) => {
-                e.preventDefault(); 
-                e.stopPropagation();
-                if (origBtn && document.body.contains(origBtn)) {
-                  origBtn.click();
-                } else {
-                  // 혹시나 새로고침 되어버렸을 경우 다시 한 번 찾아서 클릭
-                  const fallback = Array.from(document.querySelectorAll('button, a')).find(el => {
-                    if (el.id === 'lore-bottom-visual-btn') return false;
-                    const t = el.textContent || '';
-                    return t.includes('Chasm Tools') || t.includes('🔥');
-                  });
-                  if (fallback) fallback.click();
-                }
-              };
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[LoreInj:Heart] 버튼 연동 중 에러:', e);
-      }
-    }
-
-    // 0.5초마다 가볍게 실행
-    setInterval(applyTransformation, 500);
-  }
-
-  // 요구사항 실행
-  try {
-    initHeartButtonChanger();
-  } catch (e) {
-    console.error('[LoreInj:Heart] 버튼 변환 초기화 실패:', e);
   }
 })();
