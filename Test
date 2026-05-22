@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.8.2
-// @description 모듈화된 로어 인젝터 로더 (순수 UI 커스텀 적용본 - 엔진 100% 순정 상태)
-// @author      로컬AI & Assistant 수정
+// @version     1.9.0
+// @description 오리지널 1.4.0 기반 / 로어 숨김, 알림 토스트 적용 및 하단 리모컨 버튼 연동
+// @author      로컬AI
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
 // @downloadURL https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -102,7 +102,7 @@
     _w.__LoreInjReady = p;
   }
 
-  // --- 화면 중앙 컴팩트 토스트 알림 기능 구현 (색상 변경 적용) ---
+  // --- [요구사항 2, 3] 알림 토스트 구현 및 색상 변경 ---
   function showCenterToast(message, isSuccess) {
     setTimeout(() => {
       try {
@@ -158,7 +158,7 @@
     }, 0);
   }
 
-  // --- 대화 내역 로어 숨김 전용 스타일 시트 주입 및 Toastify(외부 알림창) 색상 통일 ---
+  // --- [요구사항 1, 2] 로어 숨김용 CSS 주입 및 외부 모듈 알림창(Toastify) 색상 통일 ---
   try {
     const style = document.createElement('style');
     style.textContent = `
@@ -174,7 +174,6 @@
         pointer-events: none !important;
         position: absolute !important;
       }
-      
       .toastify {
         background: #BCD0D7 !important;
         color: #486D7A !important;
@@ -186,10 +185,10 @@
     `;
     (document.head || document.documentElement).appendChild(style);
   } catch (e) {
-    console.warn('[LoreInj] 스타일 시트 주입 실패:', e);
+    console.warn('[LoreInj] 스타일 주입 실패:', e);
   }
 
-  // --- 주기적 로어 투명화 엔진 (오리지널 유지) ---
+  // --- [요구사항 1] 가벼운 3초 주기 로어 투명화 엔진 ---
   function runLoreHidingScan() {
     try {
       const markdowns = document.querySelectorAll('.wrtn-markdown:not([data-lore-processed="true"])');
@@ -242,12 +241,7 @@
 
   setInterval(runLoreHidingScan, 3000);
 
-  onRouteChange(() => {
-    setTimeout(runLoreHidingScan, 500);
-    setTimeout(runLoreHidingScan, 1500);
-  });
-
-  // --- WebSocket 및 Fetch 가로채기 엔진 (오리지널 유지 - 삽입 기능의 심장부) ---
+  // --- 오리지널 인터셉터 로직 + [요구사항 3] 인젝트 성공/실패 토스트 삽입 ---
   function installEarlyInterceptor() {
     if (L0.__interceptorLoaded) return;
     const origFetch = _w.fetch && _w.fetch.bind(_w);
@@ -257,7 +251,9 @@
 
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
-      try { return await injectFn(text); } catch (e) {
+      try { 
+        return await injectFn(text); 
+      } catch (e) {
         console.error('[Lore] early inject err:', e);
         showCenterToast('로어 인젝트 오류', false);
         return text;
@@ -426,7 +422,6 @@
   });
   updateRoute();
 
-  // --- 하단 우측 로딩 배지 기능 (색상 고정 적용) ---
   function showLoaderBadge(text, color = '#4a9') {
     try {
       const mount = document.body || document.documentElement;
@@ -535,36 +530,32 @@
     });
   }
 
-  // --- 버튼 은폐 및 하단 연동 (가장 순수하고 단순한 방식 적용) ---
+  // --- [요구사항 4] 원래 버튼 은폐 및 하단 빈자리 3 연동 ---
   function initHeartButtonChanger() {
     function applyTransformation() {
       try {
-        const btns = Array.from(document.querySelectorAll('button, a'));
-        let originalChasmBtn = null;
-
-        for (const el of btns) {
-          if (el.id === 'chasm-heart-proxy-btn') continue; // 프록시 자신은 제외
-
-          const txt = el.textContent || '';
+        // 1. 원래 버튼 찾아서 은폐
+        let origBtn = null;
+        const btns = document.querySelectorAll('button, a');
+        for (let b of btns) {
+          if (b.id === 'lore-bottom-visual-btn') continue;
+          let txt = b.textContent || '';
           if (txt.includes('Chasm Tools') || txt.includes('🔥')) {
-            originalChasmBtn = el.closest('button') || el;
+            origBtn = b.closest('button') || b;
             break;
           }
         }
 
-        if (originalChasmBtn) {
-          // 원래 버튼은 구조 변경 없이 CSS로만 시각적으로 숨김
-          originalChasmBtn.style.setProperty('position', 'absolute', 'important');
-          originalChasmBtn.style.setProperty('opacity', '0', 'important');
-          originalChasmBtn.style.setProperty('width', '0', 'important');
-          originalChasmBtn.style.setProperty('height', '0', 'important');
-          originalChasmBtn.style.setProperty('pointer-events', 'none', 'important');
-          originalChasmBtn.style.setProperty('overflow', 'hidden', 'important');
-          originalChasmBtn.style.setProperty('margin', '0', 'important');
-          originalChasmBtn.style.setProperty('padding', '0', 'important');
-          originalChasmBtn.style.setProperty('border', 'none', 'important');
-          originalChasmBtn.style.setProperty('z-index', '-9999', 'important');
+        if (origBtn) {
+          // CSS로 투명하게만 숨김 처리 (기능 파괴 없음)
+          origBtn.style.setProperty('position', 'absolute', 'important');
+          origBtn.style.setProperty('opacity', '0', 'important');
+          origBtn.style.setProperty('pointer-events', 'none', 'important');
+          origBtn.style.setProperty('width', '0', 'important');
+          origBtn.style.setProperty('height', '0', 'important');
+          origBtn.style.setProperty('overflow', 'hidden', 'important');
 
+          // 2. 하단 빈자리 3 찾기
           const toolWrapper = document.getElementById('custom-rp-tools');
           if (toolWrapper) {
             const spacers = Array.from(toolWrapper.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
@@ -572,42 +563,53 @@
             if (spacers.length >= 3) {
               const targetContainer = spacers[2]; 
               
-              let proxyBtn = document.getElementById('chasm-heart-proxy-btn');
-              if (!proxyBtn) {
-                proxyBtn = document.createElement('button');
-                proxyBtn.id = 'chasm-heart-proxy-btn';
+              // 3. 하단에 하트 버튼 생성
+              let bottomBtn = document.getElementById('lore-bottom-visual-btn');
+              if (!bottomBtn) {
+                bottomBtn = document.createElement('button');
+                bottomBtn.id = 'lore-bottom-visual-btn';
+                // 8in1 기본 원형 스타일만 적용 (외부 모듈 클래스 일절 넣지 않음)
+                bottomBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
+                bottomBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
+                bottomBtn.title = '로어 인젝터';
                 
-                // 어떠한 가짜 클래스도 주입하지 않고 오직 8in1 스타일만 적용하여 원본 버튼 복사 생성
-                proxyBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
-                proxyBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
-                proxyBtn.title = '로어 인젝터';
-                
-                // 클릭 시 숨겨진 진짜 원본 버튼을 클릭
-                proxyBtn.onclick = (e) => {
-                  e.preventDefault(); 
-                  e.stopPropagation();
-                  if (originalChasmBtn) originalChasmBtn.click();
-                };
-                
-                targetContainer.appendChild(proxyBtn);
-              } else if (proxyBtn.parentElement !== targetContainer) {
-                targetContainer.appendChild(proxyBtn);
+                targetContainer.appendChild(bottomBtn);
+              } else if (bottomBtn.parentElement !== targetContainer) {
+                targetContainer.appendChild(bottomBtn);
               }
+
+              // 4. 클릭 연동 (숨긴 원래 버튼을 대신 클릭)
+              bottomBtn.onclick = (e) => {
+                e.preventDefault(); 
+                e.stopPropagation();
+                if (origBtn && document.body.contains(origBtn)) {
+                  origBtn.click();
+                } else {
+                  // 혹시나 새로고침 되어버렸을 경우 다시 한 번 찾아서 클릭 (안전장치)
+                  const fallback = Array.from(document.querySelectorAll('button, a')).find(el => {
+                    if (el.id === 'lore-bottom-visual-btn') return false;
+                    const t = el.textContent || '';
+                    return t.includes('Chasm Tools') || t.includes('🔥');
+                  });
+                  if (fallback) fallback.click();
+                }
+              };
             }
           }
         }
       } catch (e) {
-        console.warn('[LoreInj:Heart] 버튼 연동 중 에러:', e);
+        console.warn('[LoreInj:Heart] 버튼 변환 중 에러:', e);
       }
     }
 
-    // 0.5초 주기로 스캔 (부하 없음)
+    // 0.5초마다 가볍게 실행
     setInterval(applyTransformation, 500);
   }
 
+  // 요구사항 4 실행
   try {
     initHeartButtonChanger();
   } catch (e) {
-    console.error('[LoreInj:Heart] 버튼 변환 기능 초기화 실패:', e);
+    console.error('[LoreInj:Heart] 버튼 변환 초기화 실패:', e);
   }
 })();
