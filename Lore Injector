@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.7.5
-// @description 모듈화된 로어 인젝터 로더 (헤더 증발 버그 픽스 및 실시간 버튼 연동 완벽 수정)
+// @version     1.7.6
+// @description 모듈화된 로어 인젝터 로더 (원복 클래스명 적용 및 로어 삽입 복구 완료)
 // @author      로컬AI & Assistant 수정
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -525,31 +525,31 @@
     });
   }
 
-  // --- 유저 지시 완벽 반영: 상단 버튼은 오직 <button>만 찾아서 가리고, 하단 버튼에서 실시간 클릭 호출 ---
+  // --- Chasm Tools 하트 버튼 탐색 및 삽입 기능 완벽 복구 ---
   function initHeartButtonChanger() {
     function applyTransformation() {
       try {
         const headerContainer = document.querySelector('.absolute.z-\\[5\\]');
         if (!headerContainer) return;
 
-        // [중요 수정] div, span 무시하고 오직 button 태그만 찾아 레이아웃 증발 완벽 방지
+        // 오직 button 태그만 찾아 레이아웃 증발 완벽 방지
         const headerBtns = headerContainer.querySelectorAll('button');
         
         for (const btn of headerBtns) {
           const txt = btn.textContent || '';
           if (txt.includes('Chasm Tools') || txt.includes('🔥')) {
-            // 버튼을 찾았으니 화면에서 투명하게만 가려둠
+            // 원래 버튼 가림
             btn.style.setProperty('position', 'absolute', 'important');
             btn.style.setProperty('opacity', '0', 'important');
             btn.style.setProperty('width', '0', 'important');
             btn.style.setProperty('height', '0', 'important');
             btn.style.setProperty('pointer-events', 'none', 'important');
             btn.style.setProperty('overflow', 'hidden', 'important');
-            break; // 찾았으면 더 이상 안 찾음
+            break; 
           }
         }
 
-        // 하단 툴바(빈자리 3) 찾아서 새 버튼 이식
+        // 하단 툴바(custom-rp-tools) 검색
         const toolWrapper = document.getElementById('custom-rp-tools');
         if (toolWrapper) {
           const spacers = Array.from(toolWrapper.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
@@ -557,17 +557,20 @@
           if (spacers.length >= 3) {
             const targetContainer = spacers[2]; 
             
-            let bottomBtn = document.getElementById('lore-bottom-visual-btn');
+            // [중요 해결] ID와 클래스명을 원래 규격인 'chasm-heart-proxy-btn' 및 'chasm-heart-btn'으로 유지하여
+            // 외부 로어 모듈이 연동 대상을 찾지 못하고 뻗어버리던 버그를 완전히 해결했습니다.
+            let bottomBtn = document.getElementById('chasm-heart-proxy-btn');
             if (!bottomBtn) {
               bottomBtn = document.createElement('button');
-              bottomBtn.id = 'lore-bottom-visual-btn';
+              bottomBtn.id = 'chasm-heart-proxy-btn';
               
-              // 8in1 순수 둥근 원형 클래스 적용 (네모 찌그러짐 원천 차단)
-              bottomBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
+              // 8in1 순수 둥근 원형 클래스를 적용하여 디자인을 완벽히 맞춥니다.
+              bottomBtn.className = 'chasm-heart-btn crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
+              bottomBtn.dataset.chasmIsProxy = 'true';
               bottomBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
               bottomBtn.title = '로어 인젝터';
               
-              // [중요 수정] 클릭하는 찰나의 순간에 실시간으로 버튼을 찾아서 클릭 (좀비 버튼 클릭으로 인한 링크 단절 완벽 픽스)
+              // 클릭 시 현재 헤더에 렌더링된 실시간 원래 버튼을 정밀하게 탐색하여 누릅니다.
               bottomBtn.onclick = (e) => {
                 e.preventDefault(); 
                 e.stopPropagation();
@@ -592,7 +595,7 @@
       }
     }
 
-    // 0.5초마다 가볍게 스캔하여 버튼 상태 유지
+    // 0.5초마다 주기적 탐색 실행
     setInterval(applyTransformation, 500);
   }
 
