@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.4.2-test2
+// @version     1.4.1-test1
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -23,8 +23,7 @@
 (function () {
   'use strict';
 
-  // --- [수정사항 1, 2 공통] 안전한 CSS 강제 주입 ---
-  // (외부 라이브러리인 React Toastify 등 다양한 클래스에도 먹히도록 타겟 확장)
+  // --- [수정사항 1] 스크립트 내부 알림용 애니메이션만 안전하게 주입 (외부 알림 건드리지 않음) ---
   function injectToastStyle() {
     if (document.getElementById('lore-toast-style')) return;
     const style = document.createElement('style');
@@ -34,30 +33,6 @@
         0% { opacity: 0.3; transform: scale(0.9); }
         50% { opacity: 1; transform: scale(1.1); }
         100% { opacity: 0.3; transform: scale(0.9); }
-      }
-      /* 외부 라이브러리 토스트 컨테이너 강제 중앙 정렬 */
-      :root body .Toastify__toast-container, :root body #toast-container {
-         top: 50% !important; left: 50% !important; bottom: auto !important; right: auto !important;
-         transform: translate(-50%, -50%) !important; display: flex !important; flex-direction: column !important; align-items: center !important;
-      }
-      /* 외부 토스트 레이아웃 강제 테마 적용 */
-      :root body div.toastify, :root body .toastify, :root body .Toastify__toast {
-        position: fixed !important;
-        top: 50% !important; left: 50% !important; bottom: auto !important; right: auto !important;
-        transform: translate(-50%, -50%) !important;
-        background: #BCD0D7 !important; color: #486D7A !important;
-        border: 1px solid #486D7A !important; border-radius: 9999px !important;
-        padding: 7px 15px !important; margin: 0 !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-        font-family: inherit !important; font-size: 13px !important; font-weight: 500 !important;
-        display: flex !important; align-items: center !important; justify-content: center !important;
-        z-index: 2147483647 !important; line-height: 1.2 !important; min-height: auto !important; width: auto !important;
-      }
-      /* 외부 토스트 좌측 점멸등 추가 */
-      :root body div.toastify::before, :root body .toastify::before, :root body .Toastify__toast::before {
-        content: '' !important; display: inline-block !important; width: 8px !important; height: 8px !important;
-        background-color: #c1faff !important; border-radius: 50% !important; margin-right: 8px !important;
-        animation: pulse-dot 1.5s infinite ease-in-out !important; vertical-align: middle !important; flex-shrink: 0 !important;
       }
     `;
     const target = document.head || document.documentElement;
@@ -69,107 +44,13 @@
   });
   if (!document.head) styleObserver.observe(document.documentElement, { childList: true });
 
-  // --- [수정사항 2 핵심] 단일 Interval로 모든 화면 렌더링 요소를 관리 (Observer 배제) ---
-  setInterval(() => {
-    // 1. Chasm Tools 또는 🔥 텍스트를 가진 원래 버튼 은폐 (하트 버튼은 예외 처리)
-    const allBtns = document.querySelectorAll('button, a');
-    for (let i = 0; i < allBtns.length; i++) {
-      const btn = allBtns[i];
-      if (btn.id === 'lore-bottom-visual-btn') continue;
-      const text = btn.textContent || '';
-      if (text.includes('Chasm Tools') || text.includes('🔥')) {
-        // 요구하신 절대 속성 부여 (클래스 유지, 삭제 금지)
-        btn.style.setProperty('position', 'absolute', 'important');
-        btn.style.setProperty('opacity', '0', 'important');
-        btn.style.setProperty('pointer-events', 'none', 'important');
-        btn.style.setProperty('width', '0', 'important');
-        btn.style.setProperty('height', '0', 'important');
-        btn.style.setProperty('overflow', 'hidden', 'important');
-      }
-    }
-
-    // 2. 7in1 툴바 감지 및 3번째 빈 슬롯에 하트 버튼 삽입
-    const toolbar = document.getElementById('custom-rp-tools');
-    if (toolbar) {
-      // 자식 요소 중 div이면서 인라인 스타일 width가 28px인 요소(빈자리 슬롯)만 수집
-      const slots = Array.from(toolbar.children).filter(el => el.tagName === 'DIV' && el.style.width === '28px');
-      if (slots.length >= 3) {
-        const targetSlot = slots[2]; // 세 번째 빈자리 (인덱스 2)
-        
-        if (!document.getElementById('lore-bottom-visual-btn')) {
-          const heartBtn = document.createElement('button');
-          heartBtn.id = 'lore-bottom-visual-btn';
-          heartBtn.className = 'crack-ext-lore-btn relative inline-flex items-center justify-center rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7';
-          heartBtn.innerHTML = '<span style="font-size:15px; font-weight:normal; color:#BCD0D7;">♥</span>';
-          
-          // 클릭 연동 이벤트 (클릭하는 순간 화면에서 살아있는 원래 버튼 탐색 후 클릭)
-          heartBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const btns = document.querySelectorAll('button, a');
-            for (let j = 0; j < btns.length; j++) {
-              if (btns[j].id !== 'lore-bottom-visual-btn') {
-                const t = btns[j].textContent || '';
-                if (t.includes('Chasm Tools') || t.includes('🔥')) {
-                  btns[j].click();
-                  break; // 찾은 첫 번째 진짜 버튼 대리 클릭 후 종료
-                }
-              }
-            }
-          });
-
-          // 부모 슬롯(28px 컨테이너) 내부를 중앙 정렬로 맞추고 버튼 삽입
-          targetSlot.innerHTML = '';
-          targetSlot.style.display = 'flex';
-          targetSlot.style.alignItems = 'center';
-          targetSlot.style.justifyContent = 'center';
-          targetSlot.appendChild(heartBtn);
-        }
-      }
-    }
-
-    // 3. 외부 라이브러리 토스트 실시간 강제 패치 (CSS 방어벽이 뚫릴 경우 대비 인라인 덮어쓰기)
-    const activeToasts = document.querySelectorAll('.toastify, .Toastify__toast');
-    for (let k = 0; k < activeToasts.length; k++) {
-      const el = activeToasts[k];
-      if (!el.__loreToastFixed) {
-        el.__loreToastFixed = true;
-        el.style.setProperty('position', 'fixed', 'important');
-        el.style.setProperty('top', '50%', 'important');
-        el.style.setProperty('left', '50%', 'important');
-        el.style.setProperty('bottom', 'auto', 'important');
-        el.style.setProperty('right', 'auto', 'important');
-        el.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
-        el.style.setProperty('background', '#BCD0D7', 'important');
-        el.style.setProperty('color', '#486D7A', 'important');
-        el.style.setProperty('border', '1px solid #486D7A', 'important');
-        el.style.setProperty('border-radius', '9999px', 'important');
-        el.style.setProperty('padding', '7px 15px', 'important');
-        el.style.setProperty('box-shadow', '0 4px 12px rgba(0,0,0,0.15)', 'important');
-        el.style.setProperty('font-size', '13px', 'important');
-        el.style.setProperty('font-weight', '500', 'important');
-        el.style.setProperty('display', 'flex', 'important');
-        el.style.setProperty('align-items', 'center', 'important');
-        el.style.setProperty('justify-content', 'center', 'important');
-        el.style.setProperty('z-index', '2147483647', 'important');
-        
-        // 가상 선택자(::before)가 작동 안할 상황에 대비한 DOM 기반 점멸등 강제 삽입
-        if (!el.querySelector('.lore-pulse-dot')) {
-          const dot = document.createElement('span');
-          dot.className = 'lore-pulse-dot';
-          dot.style.cssText = 'display:inline-block;width:8px;height:8px;background-color:#c1faff;border-radius:50%;margin-right:8px;animation:pulse-dot 1.5s infinite ease-in-out;flex-shrink:0;';
-          el.insertBefore(dot, el.firstChild);
-        }
-      }
-    }
-  }, 500);
-  // -------------------------------------------------------------
-
+  // --- [수정사항 1] 커스텀 인젝트 전용 토스트 (볼드체 해제, 정중앙 기준 위로 46px) ---
   function showCustomInjectToast(text) {
     try {
       const mount = document.body || document.documentElement;
       if (!mount) return;
       const toast = document.createElement('div');
+      // font-weight를 bold에서 500(기본 굵기)으로 변경
       toast.style.cssText = 'position:fixed;top:calc(50% - 46px);left:50%;transform:translate(-50%, -50%);background:#BCD0D7;color:#486D7A;border:1px solid #486D7A;border-radius:9999px;padding:7px 15px;z-index:2147483647;font-family:inherit;font-size:13px;font-weight:500;line-height:1.2;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);opacity:0;transition:opacity 0.2s ease-in-out;display:flex;align-items:center;justify-content:center;';
       toast.textContent = text;
       mount.appendChild(toast);
@@ -185,9 +66,10 @@
       console.error('[Lore] 토스트 렌더링 에러:', e);
     }
   }
+  // ---------------------------------------------------------------------------------
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.4.2-test2';
+  const LOADER_VERSION = '1.4.1-test1';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -272,6 +154,7 @@
     if (!origFetch || !origWsSend) return;
     let injectFn = null;
 
+    // --- [수정사항 1] 내부 통신 가로채기 중 커스텀 알림 연결 ---
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
       try { return await injectFn(text); } catch (e) {
@@ -297,7 +180,7 @@
                   if (orig !== mod) {
                     arr[1].message = mod;
                     origWsSend.call(ws, prefix + JSON.stringify(arr));
-                    showCustomInjectToast('✨ 로어 인젝트 완료'); 
+                    showCustomInjectToast('✨ 로어 인젝트 완료');
                   } else {
                     origWsSend.call(ws, data);
                   }
@@ -446,7 +329,8 @@
   });
   updateRoute();
 
-  function showLoaderBadge(text) {
+  // --- [수정사항 1] 스크립트 내부 알림 뱃지만 독자적인 스타일로 적용 (오류 시에도 테마 유지) ---
+  function showLoaderBadge(text, color) {
     try {
       const mount = document.body || document.documentElement;
       if (!mount) return;
@@ -527,7 +411,7 @@
       const missing = requiredAll.filter(k => !L[k]);
       console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
       settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
-      showLoaderBadge('로어 로드 지연: 콘솔 확인');
+      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
     };
     check();
   }
@@ -550,7 +434,7 @@
     } catch (e) {
       L0.__dynamicLoadError = String(e && e.message || e);
       console.error('[Lore] 동적 로드 실패:', e);
-      showLoaderBadge('로어 로드 실패: 콘솔 확인');
+      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
       try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
     }
   }
