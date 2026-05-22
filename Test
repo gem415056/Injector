@@ -23,6 +23,84 @@
 (function () {
   'use strict';
 
+  // --- [수정사항] 안전한 CSS 강제 주입 로직 (CSP 우회 및 타이밍 보장) ---
+  function injectToastStyle() {
+    if (document.getElementById('lore-toast-style')) return;
+    const style = document.createElement('style');
+    style.id = 'lore-toast-style';
+    style.textContent = `
+      @keyframes pulse-dot {
+        0% { opacity: 0.3; transform: scale(0.9); }
+        50% { opacity: 1; transform: scale(1.1); }
+        100% { opacity: 0.3; transform: scale(0.9); }
+      }
+      /* 외부 토스트 레이아웃 강제 중앙 정렬 및 디자인 테마 적용 */
+      :root body div.toastify, :root body .toastify {
+        top: 50% !important;
+        left: 50% !important;
+        bottom: auto !important;
+        right: auto !important;
+        transform: translate(-50%, -50%) !important;
+        background: #BCD0D7 !important;
+        color: #486D7A !important;
+        border: 1px solid #486D7A !important;
+        border-radius: 9999px !important;
+        padding: 8px 16px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+        font-family: inherit !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 2147483647 !important;
+      }
+      /* 외부 토스트 좌측 점멸등 추가 */
+      :root body div.toastify::before, :root body .toastify::before {
+        content: '' !important;
+        display: inline-block !important;
+        width: 8px !important;
+        height: 8px !important;
+        background-color: #bdb1a1 !important;
+        border-radius: 50% !important;
+        margin-right: 8px !important;
+        animation: pulse-dot 1.5s infinite ease-in-out !important;
+        vertical-align: middle !important;
+      }
+    `;
+    const target = document.head || document.documentElement;
+    if (target) target.appendChild(style);
+  }
+  injectToastStyle();
+  const styleObserver = new MutationObserver(() => {
+    if (document.head) { injectToastStyle(); styleObserver.disconnect(); }
+  });
+  if (!document.head) styleObserver.observe(document.documentElement, { childList: true });
+
+  // --- [수정사항] 커스텀 인젝트 전용 토스트 생성 (불빛 없이, 위로 48px 띄움) ---
+  function showCustomInjectToast(text) {
+    try {
+      const mount = document.body || document.documentElement;
+      if (!mount) return;
+      const toast = document.createElement('div');
+      toast.style.cssText = 'position:fixed;top:calc(50% - 48px);left:50%;transform:translate(-50%, -50%);background:#BCD0D7;color:#486D7A;border:1px solid #486D7A;border-radius:9999px;padding:8px 16px;z-index:2147483647;font-family:inherit;font-size:14px;font-weight:bold;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);opacity:0;transition:opacity 0.2s ease-in-out;display:flex;align-items:center;justify-content:center;';
+      toast.textContent = text;
+      mount.appendChild(toast);
+      
+      // 강제 리플로우를 통해 애니메이션 적용
+      toast.offsetHeight; 
+      toast.style.opacity = '1';
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 250);
+      }, 2500);
+    } catch (e) {
+      console.error('[Lore] 토스트 렌더링 에러:', e);
+    }
+  }
+  // -------------------------------------------------------------
+
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
   const LOADER_VERSION = '1.4.0-test.65';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
@@ -68,99 +146,6 @@
     CDN_BASE + 'injecter-6-ui.js?' + CACHE
   ];
 
-  // CSS 테마 스타일 주입
-  GM_addStyle(`
-    @keyframes pulse-dot {
-      0% { opacity: 0.3; transform: scale(0.9); }
-      50% { opacity: 1; transform: scale(1.1); }
-      100% { opacity: 0.3; transform: scale(0.9); }
-    }
-
-    /* 외부 토스트 레이아웃 강제 중앙 정렬 및 디자인 테마 적용 */
-    :root body div.toastify, :root body .toastify {
-      top: 50% !important;
-      left: 50% !important;
-      bottom: auto !important;
-      right: auto !important;
-      transform: translate(-50%, -50%) !important;
-      background: #BCD0D7 !important;
-      color: #486D7A !important;
-      border: 1px solid #486D7A !important;
-      border-radius: 9999px !important;
-      padding: 8px 16px !important;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-      font-family: inherit !important;
-      font-size: 14px !important;
-      font-weight: 500 !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-    }
-
-    /* 외부 토스트 좌측에 부드럽게 깜빡이는 상태 표시등 추가 */
-    :root body div.toastify::before, :root body .toastify::before {
-      content: '' !important;
-      display: inline-block !important;
-      width: 8px !important;
-      height: 8px !important;
-      background-color: #bdb1a1 !important;
-      border-radius: 50% !important;
-      margin-right: 8px !important;
-      animation: pulse-dot 1.5s infinite ease-in-out !important;
-      vertical-align: middle !important;
-    }
-
-    /* 내부 커스텀 인젝트 전용 토스트 레이아웃 (불빛 없음) */
-    .lore-inject-toast {
-      position: fixed !important;
-      left: 50% !important;
-      top: calc(50% - 48px) !important;
-      transform: translate(-50%, -50%) !important;
-      background: #BCD0D7 !important;
-      color: #486D7A !important;
-      border: 1px solid #486D7A !important;
-      border-radius: 9999px !important;
-      padding: 8px 16px !important;
-      z-index: 2147483647 !important;
-      font-family: inherit !important;
-      font-size: 14px !important;
-      font-weight: bold !important;
-      pointer-events: none !important;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-      opacity: 0;
-      transition: opacity 0.2s ease-in-out !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-    }
-    .lore-inject-toast.show {
-      opacity: 1 !important;
-    }
-  `);
-
-  // 커스텀 인젝트 토스트 렌더링 헬퍼 함수
-  function showCustomInjectToast(text) {
-    try {
-      const mount = document.body || document.documentElement;
-      if (!mount) return;
-      const toast = document.createElement('div');
-      toast.className = 'lore-inject-toast';
-      toast.textContent = text;
-      mount.appendChild(toast);
-      
-      // 애니메이션 발동을 위한 강제 리플로우
-      toast.offsetHeight;
-      toast.classList.add('show');
-      
-      setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 250);
-      }, 2500);
-    } catch (e) {
-      console.error('[Lore] 토스트 렌더링 에러:', e);
-    }
-  }
-
   _w.__LoreInj = _w.__LoreInj || {};
   const L0 = _w.__LoreInj;
   L0.loaderVersion = LOADER_VERSION;
@@ -202,11 +187,10 @@
     if (!origFetch || !origWsSend) return;
     let injectFn = null;
 
+    // --- [수정사항] 인젝트 실패 감지 ---
     async function injectText(text) {
       if (!injectFn || typeof text !== 'string' || !text || text.includes('OOC:')) return text;
-      try {
-        return await injectFn(text);
-      } catch (e) {
+      try { return await injectFn(text); } catch (e) {
         console.error('[Lore] early inject err:', e);
         showCustomInjectToast('로어 인젝트 오류');
         return text;
@@ -229,11 +213,11 @@
                   if (orig !== mod) {
                     arr[1].message = mod;
                     origWsSend.call(ws, prefix + JSON.stringify(arr));
-                    showCustomInjectToast('✨ 로어 인젝트 완료');
+                    showCustomInjectToast('✨ 로어 인젝트 완료'); // 성공 토스트
                   } else {
                     origWsSend.call(ws, data);
                   }
-                } catch (innerErr) {
+                } catch (e) {
                   showCustomInjectToast('로어 인젝트 오류');
                   origWsSend.call(ws, data);
                 }
@@ -267,11 +251,7 @@
                       if (body.messages[i].role === 'user' && typeof body.messages[i].content === 'string') {
                         const orig = body.messages[i].content;
                         const mod = await injectText(orig);
-                        if (orig !== mod) {
-                          body.messages[i].content = mod;
-                          injected = true;
-                          showCustomInjectToast('✨ 로어 인젝트 완료');
-                        }
+                        if (orig !== mod) { body.messages[i].content = mod; injected = true; showCustomInjectToast('✨ 로어 인젝트 완료'); }
                         break;
                       }
                     }
@@ -281,11 +261,7 @@
                       if (typeof body[key] === 'string') {
                         const orig = body[key];
                         const mod = await injectText(orig);
-                        if (orig !== mod) {
-                          body[key] = mod;
-                          injected = true;
-                          showCustomInjectToast('✨ 로어 인젝트 완료');
-                        }
+                        if (orig !== mod) { body[key] = mod; injected = true; showCustomInjectToast('✨ 로어 인젝트 완료'); }
                         break;
                       }
                     }
@@ -295,18 +271,14 @@
                       if (typeof body.variables[key] === 'string') {
                         const orig = body.variables[key];
                         const mod = await injectText(orig);
-                        if (orig !== mod) {
-                          body.variables[key] = mod;
-                          injected = true;
-                          showCustomInjectToast('✨ 로어 인젝트 완료');
-                        }
+                        if (orig !== mod) { body.variables[key] = mod; injected = true; showCustomInjectToast('✨ 로어 인젝트 완료'); }
                         break;
                       }
                     }
                   }
-                } catch (innerErr) {
+                } catch (e) {
                   showCustomInjectToast('로어 인젝트 오류');
-                  throw innerErr;
+                  throw e;
                 }
                 if (injected) {
                   const newBodyText = JSON.stringify(body);
@@ -390,7 +362,8 @@
   });
   updateRoute();
 
-  function showLoaderBadge(text, color = '#4a9') {
+  // --- [수정사항] 로더 뱃지(초기 로딩 알림) 정중앙 이동, 디자인 및 점멸등 통일 ---
+  function showLoaderBadge(text) {
     try {
       const mount = document.body || document.documentElement;
       if (!mount) return;
@@ -398,11 +371,20 @@
       if (!el) {
         el = document.createElement('div');
         el.id = 'lore-lite-loader-badge';
-        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:12px;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
+        el.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);z-index:2147483646;background:#BCD0D7;border:1px solid #486D7A;border-radius:9999px;padding:8px 16px;font-size:14px;font-weight:500;color:#486D7A;box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:inherit;pointer-events:none;display:flex;align-items:center;justify-content:center;';
+        
+        const dot = document.createElement('span');
+        dot.style.cssText = 'display:inline-block;width:8px;height:8px;background-color:#bdb1a1;border-radius:50%;margin-right:8px;animation:pulse-dot 1.5s infinite ease-in-out;';
+        el.appendChild(dot);
+        
+        const textNode = document.createElement('span');
+        textNode.id = 'lore-lite-loader-badge-text';
+        el.appendChild(textNode);
+        
         mount.appendChild(el);
       }
-      el.textContent = text;
-      el.style.borderColor = color;
+      const textNode = document.getElementById('lore-lite-loader-badge-text');
+      if (textNode) textNode.textContent = text;
     } catch (_) {}
   }
 
@@ -462,7 +444,7 @@
       const missing = requiredAll.filter(k => !L[k]);
       console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
       settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
-      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
+      showLoaderBadge('로어 로드 지연: 콘솔 확인'); // 에러 시에도 테마 통일
     };
     check();
   }
@@ -485,7 +467,7 @@
     } catch (e) {
       L0.__dynamicLoadError = String(e && e.message || e);
       console.error('[Lore] 동적 로드 실패:', e);
-      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
+      showLoaderBadge('로어 로드 실패: 콘솔 확인'); // 에러 시에도 테마 통일
       try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
     }
   }
