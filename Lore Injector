@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.6.4
-// @description 모듈화된 로어 인젝터 로더 (하단 툴바 빈자리3 배치 및 알림 UI 색상 변경 적용)
+// @version     1.6.6
+// @description 모듈화된 로어 인젝터 로더 (게이트 오타 수정 및 알림 UI 색상 안정화 적용)
 // @author      로컬AI & Assistant 수정
 // @match       https://crack.wrtn.ai/*
 // @updateURL   https://raw.githubusercontent.com/Localsmile/CRACK-INJECTION-REFINER/260513/embedding_pre/erie_crack_inject.user.js
@@ -102,7 +102,7 @@
     _w.__LoreInjReady = p;
   }
 
-  // --- 화면 중앙 컴팩트 토스트 알림 기능 구현 (색상 변경 완료) ---
+  // --- 화면 중앙 컴팩트 토스트 알림 기능 구현 ---
   function showCenterToast(message, isSuccess) {
     setTimeout(() => {
       try {
@@ -115,7 +115,6 @@
         const toast = document.createElement('div');
         toast.id = 'lore-center-toast';
         
-        // 배경, 테두리, 글자색 요청하신 대로 변경
         toast.style.cssText = `
           position: fixed;
           top: calc(50% - 30px);
@@ -418,7 +417,7 @@
   updateRoute();
 
   // --- 하단 알림 토스트 (로딩 배지) 색상도 동일하게 변경 ---
-  function showLoaderBadge(text) {
+  function showLoaderBadge(text, color = '#BCD0D7') {
     try {
       const mount = document.body || document.documentElement;
       if (!mount) return;
@@ -426,11 +425,11 @@
       if (!el) {
         el = document.createElement('div');
         el.id = 'lore-lite-loader-badge';
-        // 배경, 테두리, 글자색 통일 적용
-        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#486D7A;border:1px solid #BCD0D7;border-radius:20px;padding:8px 14px;font-size:12px;color:#ffffff;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
+        el.style.cssText = 'position:fixed;right:20px;bottom:70px;z-index:2147483646;background:#486D7A;border-radius:20px;padding:8px 14px;font-size:12px;color:#ffffff;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:inherit;pointer-events:none;';
         mount.appendChild(el);
       }
       el.textContent = text;
+      el.style.border = '1px solid ' + color;
     } catch (_) {}
   }
 
@@ -490,7 +489,7 @@
       const missing = requiredAll.filter(k => !L[k]);
       console.error('[LoreInj] 게이트 타임아웃:', missing, L.moduleStatus || {});
       settle({ ok: false, reason: 'timeout', missing, missingCore, missingSubs, moduleStatus: L.moduleStatus || {} });
-      showLoaderBadge('로어 로드 지연: 콘솔 확인');
+      showLoaderBadge('로어 로드 지연: 콘솔 확인', '#d66');
     };
     check();
   }
@@ -513,7 +512,7 @@
     } catch (e) {
       L0.__dynamicLoadError = String(e && e.message || e);
       console.error('[LoreInj] 동적 로드 실패:', e);
-      showLoaderBadge('로어 로드 실패: 콘솔 확인');
+      showLoaderBadge('로어 로드 실패: 콘솔 확인', '#d66');
       try { _w.__LoreInjReady.__resolve({ ok: false, reason: 'dynamic-load-failed', error: L0.__dynamicLoadError }); } catch (_) {}
     }
   }
@@ -528,7 +527,7 @@
   }
 
   // --- Chasm Tools 하트 버튼 스타일 및 자동 정렬 처리 코드 ---
-  // MutationObserver가 아닌 setInterval(타이머)를 사용하여 부하 최소화
+  // CPU 부하 방지를 위해 3초(3000ms) 타이머로 저빈도 감지 작동
   function initHeartButtonChanger() {
     function applyTransformation() {
       try {
@@ -601,8 +600,8 @@
       }
     }
 
-    // 0.5초(500ms)마다 백그라운드에서 가볍게 스캔만 반복하도록 타이머 적용
-    setInterval(applyTransformation, 500);
+    // 3초(3000ms)마다 백그라운드에서 가볍게 스캔만 반복하도록 타이머 적용
+    setInterval(applyTransformation, 3000);
   }
 
   try {
