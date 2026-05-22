@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        에리의 크랙 로어 인젝터 (Loader)
 // @namespace   에리의 크랙 로어 인젝터
-// @version     1.4.1-test1
+// @version     1.4.1-test2
 // @description 모듈화된 로어 인젝터 로더
 // @author      로컬AI
 // @match       https://crack.wrtn.ai/*
@@ -23,7 +23,7 @@
 (function () {
   'use strict';
 
-  // --- [수정사항] 안전한 CSS 강제 주입 ---
+  // --- [수정사항] 안전한 CSS 강제 주입 (+ 로어 투명화 클래스 추가) ---
   function injectToastStyle() {
     if (document.getElementById('lore-toast-style')) return;
     const style = document.createElement('style');
@@ -69,6 +69,19 @@
         animation: pulse-dot 1.5s infinite ease-in-out !important;
         vertical-align: middle !important;
       }
+      /* 로어 텍스트 투명화용 클래스 */
+      .erie-lore {
+        opacity: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        pointer-events: none !important;
+        position: absolute !important;
+      }
     `;
     const target = document.head || document.documentElement;
     if (target) target.appendChild(style);
@@ -79,13 +92,11 @@
   });
   if (!document.head) styleObserver.observe(document.documentElement, { childList: true });
 
-  // --- [수정사항] 커스텀 인젝트 전용 토스트 생성 (볼드체 해제 적용) ---
   function showCustomInjectToast(text) {
     try {
       const mount = document.body || document.documentElement;
       if (!mount) return;
       const toast = document.createElement('div');
-      // font-weight를 bold에서 500(보통 두께)으로 변경하여 볼드체 해제
       toast.style.cssText = 'position:fixed;top:calc(50% - 46px);left:50%;transform:translate(-50%, -50%);background:#BCD0D7;color:#486D7A;border:1px solid #486D7A;border-radius:9999px;padding:7px 15px;z-index:2147483647;font-family:inherit;font-size:13px;font-weight:500;line-height:1.2;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);opacity:0;transition:opacity 0.2s ease-in-out;display:flex;align-items:center;justify-content:center;';
       toast.textContent = text;
       mount.appendChild(toast);
@@ -101,10 +112,64 @@
       console.error('[Lore] 토스트 렌더링 에러:', e);
     }
   }
+
+  // --- [수정사항] 로어 투명화 스캔 & 버튼 탐색 함수 (타이머 기반) ---
+  function scanAndHideLore() {
+    const elements = document.querySelectorAll('.wrtn-markdown:not([data-lore-processed="true"])');
+    elements.forEach(el => {
+      // 입력창 내부 텍스트는 처리 무시
+      if (el.closest('.ProseMirror') || el.closest('.__chat_input_textarea')) return;
+      
+      const text = el.textContent || '';
+      if (text.includes('[System:') || text.includes('System: Established world')) {
+        // 자식 노드가 있는 경우 (일반적인 뤼튼 마크다운 P태그 구조)
+        if (el.children.length > 0) {
+          let inSystem = false;
+          Array.from(el.children).forEach(child => {
+            const childText = child.textContent || '';
+            const hasStart = childText.includes('[System:') || childText.includes('System: Established world');
+            const hasEnd = childText.includes('[/System]');
+            
+            if (hasStart && hasEnd) {
+              child.classList.add('erie-lore');
+              inSystem = false;
+            } else if (hasStart) {
+              child.classList.add('erie-lore');
+              inSystem = true;
+            } else if (hasEnd) {
+              child.classList.add('erie-lore');
+              inSystem = false;
+            } else if (inSystem) {
+              child.classList.add('erie-lore');
+            }
+          });
+        } else {
+          // 단일 노드인 경우 정규식 래핑
+          let html = el.innerHTML;
+          const regex = /(\[System:|System: Established world)[\s\S]*?(\[\/System\]|$)/g;
+          el.innerHTML = html.replace(regex, '<span class="erie-lore">$&</span>');
+        }
+        el.setAttribute('data-lore-processed', 'true');
+      }
+    });
+  }
+
+  function scanAndConnectButtons() {
+    // 하단 버튼 탐색 및 연결용 스켈레톤 함수 (0.5초 주기 실행 예정)
+    // 추후 버튼 관련 로직 추가 위치
+  }
+
+  function startScanners() {
+    setInterval(scanAndHideLore, 3000);
+    setInterval(scanAndConnectButtons, 500);
+  }
+  
+  // 로더 시작 시 타이머 가동
+  startScanners();
   // -------------------------------------------------------------
 
   const _w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  const LOADER_VERSION = '1.4.1-test1';
+  const LOADER_VERSION = '1.4.1-test2';
   const CDN_BASE = 'https://cdn.jsdelivr.net/gh/Localsmile/CRACK-INJECTION-REFINER@260513/embedding/';
   const CACHE = 'v=' + encodeURIComponent(LOADER_VERSION);
   const MODULES = [
@@ -321,6 +386,8 @@
       path: location.pathname,
       href: location.href
     };
+    // 라우트(주소) 변경 시 즉각적인 일회성 스캔 호출
+    try { scanAndHideLore(); scanAndConnectButtons(); } catch(_) {}
   }
 
   function onRouteChange(cb) {
